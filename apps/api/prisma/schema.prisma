@@ -1,47 +1,56 @@
+// Boba Claude Database Schema
+// Using SQLite for simplicity
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:../data/boba-claude.db"
+}
+
 generator client {
   provider = "prisma-client-js"
 }
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
+// User accounts (simple auth for MVP)
 model User {
-  id        String   @id @default(cuid())
+  id        String   @id @default(uuid())
   email     String   @unique
-  password  String
+  password  String   // bcrypt hashed
   name      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  tokens    Token[]
   sessions  Session[]
 }
 
-model Session {
-  id           String    @id @default(cuid())
-  userId       String
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  customName   String?
-  metadata     Json      @default("{}")
-  active       Boolean   @default(false)
-  lastActiveAt DateTime  @default(now())
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  messages     Message[]
+// Encrypted API tokens (Claude, OpenAI, etc)
+model Token {
+  id        String   @id @default(uuid())
+  userId    String
+  vendor    String   // "anthropic", "openai"
+  token     String   // Encrypted with crypto
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, vendor])
   @@index([userId])
-  @@index([lastActiveAt])
 }
 
-model Message {
-  id        String   @id @default(cuid())
-  sessionId String
-  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  role      String   // 'user' | 'assistant'
-  content   String   @db.Text
-  metadata  Json     @default("{}")
-  createdAt DateTime @default(now())
+// Claude conversation sessions
+model Session {
+  id          String   @id @default(uuid())
+  userId      String
+  claudeId    String?  // Claude session ID from SDK
+  name        String   // "Conversation about..."
+  lastMessage String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  @@index([sessionId])
-  @@index([createdAt])
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([claudeId])
 }
