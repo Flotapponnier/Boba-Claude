@@ -12,12 +12,12 @@
 }
 
 [data-theme="black"] {
-  --bg-primary: #0a0a0a;
-  --bg-secondary: #1a1a1a;
+  --bg-primary: #0f0f0f;
+  --bg-secondary: #e5e5e5;
   --text-primary: #ffffff;
-  --text-secondary: #999999;
-  --accent: #333333;
-  --accent-light: #555555;
+  --text-secondary: #666666;
+  --accent: #ffffff;
+  --accent-light: #d0d0d0;
 }
 
 [data-theme="orange"] {

@@ -65,7 +65,7 @@ export default function HomePage() {
       >
         {/* Sidebar Header */}
         <div className="p-4 border-b" style={{ borderColor: 'var(--bg-secondary)' }}>
-          <div className="relative w-full h-16">
+          <div className="relative w-full h-24">
             <Image
               src="/banner.png"
               alt="Boba Claude"
