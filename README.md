@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="./public/banner.png" alt="Boba Claude Banner" width="600"/>
+</div>
+
 # Boba Claude
 
 A production-ready web platform enabling secure, mobile-accessible interaction with Claude AI, featuring persistent conversation history, session management, and code execution capabilities.

@@ -44,19 +44,15 @@ export default function HomePage() {
       >
         {/* Sidebar Header */}
         <div className="p-4 border-b" style={{ borderColor: 'var(--bg-secondary)' }}>
-          <div className="flex items-center gap-3">
-            <div className="relative w-10 h-10">
-              <Image
-                src={CHARACTER_IMAGES[character]}
-                alt="Boba"
-                fill
-                className="object-contain"
-                unoptimized
-              />
-            </div>
-            <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-              Boba Claude
-            </h1>
+          <div className="relative w-full h-16">
+            <Image
+              src="/banner.png"
+              alt="Boba Claude"
+              fill
+              className="object-contain"
+              unoptimized
+              priority
+            />
           </div>
         </div>
 
