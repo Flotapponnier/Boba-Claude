@@ -94,6 +94,24 @@ export class AuthService {
 
     return userWithoutPassword
   }
+
+  /**
+   * Get user by email
+   */
+  async getUserByEmail(email: string): Promise<Omit<User, 'password'> | null> {
+    const user = await prisma.user.findUnique({
+      where: { email },
+    })
+
+    if (!user) {
+      return null
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password, ...userWithoutPassword } = user
+
+    return userWithoutPassword
+  }
 }
 
 export const authService = new AuthService()

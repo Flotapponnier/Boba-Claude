@@ -1,10 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useChatStore } from '@/lib/store'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
 const WS_URL = API_URL.replace('http://', 'ws://').replace('https://', 'wss://')
+
+// Local-only mode - no user authentication needed
+const LOCAL_TOKEN = 'local-session'
 
 interface ClaudeMessage {
   type: 'ready' | 'claude_message' | 'thinking' | 'session_update' | 'error' | 'output'
@@ -15,77 +18,14 @@ interface ClaudeMessage {
   error?: string
 }
 
-// Auto-login for local dev - create/login with test account
-const getOrCreateToken = async (): Promise<string> => {
-  const storedToken = localStorage.getItem('boba_token')
-  if (storedToken) return storedToken
-
-  // Auto-register test user
-  try {
-    const response = await fetch(`${API_URL}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: 'local@boba.com',
-        password: 'password123',
-        name: 'Local User',
-      }),
-    })
-
-    if (response.ok) {
-      const data = await response.json()
-      localStorage.setItem('boba_token', data.token)
-      return data.token
-    }
-
-    // If user exists, login
-    const loginResponse = await fetch(`${API_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: 'local@boba.com',
-        password: 'password123',
-      }),
-    })
-
-    const loginData = await loginResponse.json()
-    localStorage.setItem('boba_token', loginData.token)
-    return loginData.token
-  } catch (err) {
-    throw new Error('Failed to authenticate')
-  }
-}
-
 export function useClaude() {
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [token, setToken] = useState<string | null>(null)
 
   const wsRef = useRef<WebSocket | null>(null)
   const { addMessage, setLoading } = useChatStore()
-
-  // Auto-login on mount
-  useEffect(() => {
-    getOrCreateToken().then(setToken).catch(console.error)
-  }, [])
-
-  // Check OAuth status
-  const checkOAuthStatus = async () => {
-    try {
-      const response = await fetch(`${API_URL}/oauth/status`, {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      })
-      const data = await response.json()
-      return data.connected
-    } catch (err) {
-      console.error('Failed to check OAuth status:', err)
-      return false
-    }
-  }
 
   // Start OAuth flow
   const connectClaude = async () => {
@@ -96,7 +36,7 @@ export function useClaude() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
+          Authorization: `Bearer ${LOCAL_TOKEN}`,
         },
         body: JSON.stringify({}),
       })
@@ -126,7 +66,7 @@ export function useClaude() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${LOCAL_TOKEN}`,
         },
         body: JSON.stringify({}),
       })
@@ -153,7 +93,7 @@ export function useClaude() {
     try {
       const ws = new WebSocket(`${WS_URL}/chat/stream/${sessionId}`, {
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Authorization: `Bearer ${LOCAL_TOKEN}`,
         },
       } as any)
 
@@ -262,7 +202,7 @@ export function useClaude() {
         await fetch(`${API_URL}/chat/session/${sessionId}`, {
           method: 'DELETE',
           headers: {
-            Authorization: `Bearer ${authToken}`,
+            Authorization: `Bearer ${LOCAL_TOKEN}`,
           },
         })
       } catch (err) {
@@ -291,6 +231,5 @@ export function useClaude() {
     connectClaude,
     disconnect,
     sendMessage,
-    checkOAuthStatus,
   }
 }
