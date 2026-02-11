@@ -50,10 +50,10 @@ export class ClaudeSessionManager extends EventEmitter {
    * Create new Claude Code session
    */
   async createSession(userId: string): Promise<string> {
-    // Get API key
-    const apiKey = await tokenService.getToken(userId, 'anthropic-api' as any)
-    if (!apiKey) {
-      throw new Error('No API key found. Please save your API key first.')
+    // Get OAuth token (from Claude.ai OAuth flow)
+    const oauthToken = await tokenService.getToken(userId, 'anthropic')
+    if (!oauthToken) {
+      throw new Error('No Claude OAuth token found. Please connect your Claude account.')
     }
 
     const sessionId = randomUUID()
@@ -70,8 +70,8 @@ export class ClaudeSessionManager extends EventEmitter {
     this.sessions.set(sessionId, sessionState)
 
     try {
-      // Spawn Claude CLI
-      await this.spawnClaude(sessionId, apiKey)
+      // Spawn Claude CLI with OAuth token
+      await this.spawnClaude(sessionId, oauthToken)
 
       sessionState.status = 'ready'
       this.emit('session:ready', sessionId)
@@ -89,20 +89,18 @@ export class ClaudeSessionManager extends EventEmitter {
   /**
    * Spawn Claude CLI process
    */
-  private async spawnClaude(sessionId: string, apiKey: string): Promise<void> {
+  private async spawnClaude(sessionId: string, oauthToken: string): Promise<void> {
     return new Promise((resolve, reject) => {
       // Check if claude CLI is available
       const claudeCommand = 'claude'
 
-      // Spawn process with API key in env
+      // Spawn process with OAuth token (like Happy does)
       const child = spawn(claudeCommand, [
         '--session-id', sessionId,
-        '--json', // JSON output mode
       ], {
         env: {
           ...process.env,
-          ANTHROPIC_AUTH_TOKEN: apiKey,
-          CLAUDE_CLI_NO_HOOKS: 'true', // Disable hooks for now
+          CLAUDE_CODE_OAUTH_TOKEN: oauthToken, // Use OAuth token like Happy
         },
         stdio: ['pipe', 'pipe', 'pipe'],
       })
