@@ -1,0 +1,25 @@
+{
+  "name": "boba-claude",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloud-native platform for accessible Claude AI interaction",
+  "scripts": {
+    "dev": "pnpm --filter './apps/*' dev",
+    "build": "pnpm --filter './apps/*' build",
+    "start": "pnpm --filter './apps/*' start",
+    "lint": "pnpm --filter './apps/*' lint",
+    "type-check": "pnpm --filter './apps/*' type-check",
+    "test": "pnpm --filter './apps/*' test"
+  },
+  "keywords": [
+    "claude",
+    "ai",
+    "chatbot",
+    "assistant"
+  ],
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0"
+}

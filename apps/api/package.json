@@ -1,0 +1,39 @@
+{
+  "name": "@boba-claude/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src/**/*.ts",
+    "type-check": "tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev"
+  },
+  "dependencies": {
+    "fastify": "^4.26.0",
+    "@fastify/cors": "^9.0.0",
+    "@fastify/jwt": "^8.0.0",
+    "@fastify/websocket": "^10.0.0",
+    "@prisma/client": "^5.10.0",
+    "@anthropic-ai/sdk": "^0.17.0",
+    "ioredis": "^5.3.0",
+    "bull": "^4.12.0",
+    "zod": "^3.22.0",
+    "pino": "^8.19.0",
+    "pino-pretty": "^11.0.0",
+    "bcrypt": "^5.1.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/bcrypt": "^5.0.0",
+    "typescript": "^5.4.0",
+    "tsx": "^4.7.0",
+    "prisma": "^5.10.0",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0"
+  }
+}
