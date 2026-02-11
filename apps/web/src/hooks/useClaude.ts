@@ -6,9 +6,6 @@ import { useChatStore } from '@/lib/store'
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
 const WS_URL = API_URL.replace('http://', 'ws://').replace('https://', 'wss://')
 
-// Mock auth for development
-const MOCK_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIxIiwiaWF0IjoxNTE2MjM5MDIyfQ.mock'
-
 interface ClaudeMessage {
   type: 'ready' | 'claude_message' | 'thinking' | 'session_update' | 'error' | 'output'
   content?: string
@@ -18,7 +15,7 @@ interface ClaudeMessage {
   error?: string
 }
 
-export function useClaude() {
+export function useClaude(token: string | null) {
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -27,12 +24,26 @@ export function useClaude() {
   const wsRef = useRef<WebSocket | null>(null)
   const { addMessage, setLoading } = useChatStore()
 
+  // Early return if no token
+  if (!token) {
+    return {
+      isConnected: false,
+      isConnecting: false,
+      error: 'Not authenticated',
+      sessionId: null,
+      connectClaude: async () => {},
+      disconnect: async () => {},
+      sendMessage: () => {},
+      checkOAuthStatus: async () => false,
+    }
+  }
+
   // Check OAuth status
   const checkOAuthStatus = async () => {
     try {
       const response = await fetch(`${API_URL}/oauth/status`, {
         headers: {
-          Authorization: `Bearer ${MOCK_TOKEN}`,
+          Authorization: `Bearer ${token}`,
         },
       })
       const data = await response.json()
@@ -52,7 +63,7 @@ export function useClaude() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${MOCK_TOKEN}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({}),
       })
@@ -82,7 +93,7 @@ export function useClaude() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${MOCK_TOKEN}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({}),
       })
@@ -109,7 +120,7 @@ export function useClaude() {
     try {
       const ws = new WebSocket(`${WS_URL}/chat/stream/${sessionId}`, {
         headers: {
-          Authorization: `Bearer ${MOCK_TOKEN}`,
+          Authorization: `Bearer ${token}`,
         },
       } as any)
 
@@ -218,7 +229,7 @@ export function useClaude() {
         await fetch(`${API_URL}/chat/session/${sessionId}`, {
           method: 'DELETE',
           headers: {
-            Authorization: `Bearer ${MOCK_TOKEN}`,
+            Authorization: `Bearer ${token}`,
           },
         })
       } catch (err) {
