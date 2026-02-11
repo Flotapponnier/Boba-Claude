@@ -140,7 +140,7 @@ export default function HomePage() {
         <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4 max-w-4xl mx-auto w-full">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full">
-              <div className="relative w-48 h-48 mb-4 animate-float">
+              <div className="relative w-32 h-32 mb-4 animate-float">
                 <Image
                   src={CHARACTER_IMAGES[character]}
                   alt="Boba"
@@ -160,7 +160,7 @@ export default function HomePage() {
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 {message.role === 'assistant' && (
-                  <div className="relative w-8 h-8 mr-2 flex-shrink-0">
+                  <div className="relative w-12 h-12 mr-2 flex-shrink-0">
                     <Image
                       src={CHARACTER_IMAGES[character]}
                       alt="Boba"
