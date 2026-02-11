@@ -11,12 +11,13 @@ interface PKCESession {
 }
 
 // Claude OAuth Configuration
+// Note: Using official Claude Code CLI port (54545) for OAuth callback
 const CLAUDE_CONFIG = {
   CLIENT_ID: env.CLAUDE_CLIENT_ID,
   AUTHORIZE_URL: 'https://claude.ai/oauth/authorize',
   TOKEN_URL: 'https://console.anthropic.com/v1/oauth/token',
   SCOPE: 'user:inference',
-  CALLBACK_URL: `${env.FRONTEND_URL.replace('3000', '4000')}/oauth/callback`,
+  CALLBACK_URL: 'http://localhost:54545/callback',
 }
 
 export class OAuthService {

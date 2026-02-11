@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { oauthService } from '../services/oauth.service'
+import { callbackServer } from './callback-server'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 
@@ -23,10 +24,10 @@ async function openBrowser(url: string): Promise<void> {
 }
 
 /**
- * Connect routes - simplified OAuth flow for Claude
+ * Connect routes - OAuth flow for Claude with callback server
  */
 export async function connectRoutes(fastify: FastifyInstance) {
-  // Start OAuth flow (opens browser)
+  // Start OAuth flow (opens browser and waits for callback)
   fastify.post('/connect/claude', {
     onRequest: [fastify.authenticate],
   }, async (request, reply) => {
@@ -34,13 +35,29 @@ export async function connectRoutes(fastify: FastifyInstance) {
       // Generate authorization URL
       const url = await oauthService.getAuthorizationUrl(request.userId!)
 
+      // Extract state from URL for callback tracking
+      const urlObj = new URL(url)
+      const state = urlObj.searchParams.get('state')
+
+      if (!state) {
+        return reply.code(500).send({ error: 'Failed to generate OAuth state' })
+      }
+
       // Open browser automatically
       await openBrowser(url)
 
-      return {
-        success: true,
-        url,
-        message: 'Browser opened. Please authorize Claude access.',
+      // Wait for OAuth callback (with 5-minute timeout)
+      const result = await callbackServer.waitForCallback(state)
+
+      if (result.success) {
+        return {
+          success: true,
+          message: 'Successfully connected to Claude!',
+        }
+      } else {
+        return reply.code(400).send({
+          error: result.error || 'OAuth flow failed',
+        })
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'

@@ -24,25 +24,8 @@ export async function oauthRoutes(fastify: FastifyInstance) {
     }
   })
 
-  // OAuth callback (GET endpoint for redirect from Claude.ai)
-  fastify.get('/oauth/callback', async (request, reply) => {
-    const query = callbackSchema.parse(request.query)
-
-    try {
-      const result = await oauthService.handleCallback(query.code, query.state)
-
-      // Redirect to frontend with success
-      return reply.redirect(
-        `${env.FRONTEND_URL}?oauth=success&vendor=anthropic`
-      )
-    } catch (error) {
-      // Redirect to frontend with error
-      const message = error instanceof Error ? error.message : 'Unknown error'
-      return reply.redirect(
-        `${env.FRONTEND_URL}?oauth=error&message=${encodeURIComponent(message)}`
-      )
-    }
-  })
+  // Note: OAuth callback is now handled by a separate server on port 54545
+  // (see callback-server.ts) to match Claude Code CLI's registered redirect URI
 
   // Check if user has valid Claude token
   fastify.get('/oauth/status', {
