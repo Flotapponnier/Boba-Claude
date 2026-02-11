@@ -9,6 +9,7 @@ import { authMiddleware } from './middleware/auth'
 import { healthRoutes } from './routes/health'
 import { authRoutes } from './routes/auth'
 import { oauthRoutes } from './routes/oauth'
+import { connectRoutes } from './routes/connect'
 import { devRoutes } from './routes/dev'
 import { chatRoutes } from './routes/chat'
 
@@ -41,6 +42,7 @@ export async function buildServer() {
   await fastify.register(healthRoutes)
   await fastify.register(authRoutes)
   await fastify.register(oauthRoutes)
+  await fastify.register(connectRoutes)
   await fastify.register(chatRoutes)
   await fastify.register(devRoutes)
 
