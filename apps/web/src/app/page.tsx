@@ -81,20 +81,20 @@ export default function HomePage() {
         <div className="flex-1 p-4 space-y-2">
           <button
             className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-opacity-10 hover:bg-black transition-colors"
-            style={{ color: character === 'black' ? '#ffffff' : 'var(--text-primary)' }}
+            style={{ color: character === 'black' ? '#000000' : 'var(--text-primary)' }}
           >
             <MessageSquare size={20} />
             <span>New Chat</span>
           </button>
 
           <div className="pt-4">
-            <p className="text-xs font-medium mb-2" style={{ color: character === 'black' ? '#999999' : 'var(--text-secondary)' }}>
+            <p className="text-xs font-medium mb-2" style={{ color: character === 'black' ? '#666666' : 'var(--text-secondary)' }}>
               HISTORY
             </p>
             <div className="space-y-1">
               <button
                 className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-opacity-10 hover:bg-black transition-colors text-left"
-                style={{ color: character === 'black' ? '#999999' : 'var(--text-secondary)' }}
+                style={{ color: character === 'black' ? '#666666' : 'var(--text-secondary)' }}
               >
                 <Clock size={16} />
                 <span className="text-sm truncate">Previous conversation...</span>
@@ -108,7 +108,7 @@ export default function HomePage() {
           <button
             onClick={() => setShowSettings(!showSettings)}
             className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-opacity-10 hover:bg-black transition-colors"
-            style={{ color: character === 'black' ? '#ffffff' : 'var(--text-primary)' }}
+            style={{ color: character === 'black' ? '#000000' : 'var(--text-primary)' }}
           >
             <Settings size={20} />
             <span>Settings</span>
@@ -251,7 +251,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         style={{ backgroundColor: 'var(--bg-primary)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-2xl font-bold mb-6" style={{ color: character === 'black' ? '#ffffff' : 'var(--text-primary)' }}>
+        <h2 className="text-2xl font-bold mb-6" style={{ color: character === 'black' ? '#000000' : 'var(--text-primary)' }}>
           Choose Your Boba
         </h2>
 
@@ -264,11 +264,10 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                 onClose()
               }}
               className={`p-4 rounded-xl transition-all hover:scale-105 ${
-                character === char.id ? 'ring-4' : ''
+                character === char.id ? 'ring-4 ring-gray-400' : ''
               }`}
               style={{
                 backgroundColor: char.id === 'black' ? '#f5f5f5' : 'var(--bg-secondary)',
-                ringColor: 'var(--accent)',
               }}
             >
               <div className="relative w-20 h-20 mx-auto mb-2">
@@ -282,7 +281,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
               </div>
               <p
                 className="text-sm font-medium text-center"
-                style={{ color: 'var(--text-primary)' }}
+                style={{ color: char.id === 'black' ? '#000000' : 'var(--text-primary)' }}
               >
                 {char.name}
               </p>
