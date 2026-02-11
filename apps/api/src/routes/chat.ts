@@ -77,114 +77,148 @@ export async function chatRoutes(fastify: FastifyInstance) {
   fastify.register(async (fastify) => {
     fastify.get('/chat/stream/:sessionId', {
       websocket: true,
-    }, (socket: SocketStream, request) => {
+    }, (connection: SocketStream, request) => {
       const { sessionId } = request.params as { sessionId: string }
+      const ws = connection.socket
       let userId: string | null = null
 
-      // Verify JWT
-      const token = request.headers.authorization?.replace('Bearer ', '')
+      // Get token from query parameter (browser WebSocket doesn't support headers)
+      const { token } = request.query as { token?: string }
+
       if (!token) {
-        socket.socket.send(JSON.stringify({ type: 'error', error: 'No authorization token' }))
-        socket.socket.close()
+        ws.send(JSON.stringify({ type: 'error', error: 'No authorization token' }))
+        ws.close()
         return
       }
 
-      try {
-        const decoded = fastify.jwt.verify(token) as { userId: string }
-        userId = decoded.userId
-      } catch {
-        socket.socket.send(JSON.stringify({ type: 'error', error: 'Invalid token' }))
-        socket.socket.close()
-        return
+      // Authentication (async operations)
+      const authenticateAndSetup = async () => {
+        // Check for local-session bypass token
+        if (token === 'local-session') {
+          // Get or create local user
+          const { authService } = await import('../services/auth.service')
+          let localUser = await authService.getUserByEmail('local@boba.com')
+
+          if (!localUser) {
+            localUser = await authService.createUser({
+              email: 'local@boba.com',
+              password: 'local-dev',
+              name: 'Local User',
+            })
+          }
+
+          userId = localUser.id
+        } else {
+          // Verify JWT token
+          try {
+            const decoded = fastify.jwt.verify(token) as { userId: string }
+            userId = decoded.userId
+          } catch {
+            ws.send(JSON.stringify({ type: 'error', error: 'Invalid token' }))
+            ws.close()
+            return
+          }
+        }
+
+        return setupWebSocket()
       }
 
-      // Verify session access
-      const session = claudeSessionManager.getSession(sessionId)
-      if (!session) {
-        socket.socket.send(JSON.stringify({ type: 'error', error: 'Session not found' }))
-        socket.socket.close()
-        return
-      }
+      const setupWebSocket = () => {
+        // Verify session access
+        const session = claudeSessionManager.getSession(sessionId)
+        if (!session) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Session not found' }))
+          ws.close()
+          return
+        }
 
-      if (session.userId !== userId) {
-        socket.socket.send(JSON.stringify({ type: 'error', error: 'Access denied' }))
-        socket.socket.close()
-        return
-      }
+        if (session.userId !== userId) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Access denied' }))
+          ws.close()
+          return
+        }
 
-      // Create JSONL scanner for this session
-      const scanner = scannerManager.createScanner(sessionId)
+        // Create JSONL scanner for this session
+        const scanner = scannerManager.createScanner(sessionId)
 
-      // Forward scanner messages to WebSocket
-      scanner.on('message', (message) => {
-        socket.socket.send(JSON.stringify({
-          type: 'claude_message',
-          data: message,
+        // Forward scanner messages to WebSocket
+        scanner.on('message', (message) => {
+          ws.send(JSON.stringify({
+            type: 'claude_message',
+            data: message,
+          }))
+        })
+
+        scanner.on('error', (error) => {
+          ws.send(JSON.stringify({
+            type: 'error',
+            error: error.message,
+          }))
+        })
+
+        // Forward session manager events
+        const handleSessionUpdate = (sid: string, state: any) => {
+          if (sid === sessionId) {
+            ws.send(JSON.stringify({
+              type: 'session_update',
+              data: state,
+            }))
+          }
+        }
+
+        const handleThinking = (sid: string, isThinking: boolean) => {
+          if (sid === sessionId) {
+            ws.send(JSON.stringify({
+              type: 'thinking',
+              data: { isThinking },
+            }))
+          }
+        }
+
+        claudeSessionManager.on('session:update', handleSessionUpdate)
+        claudeSessionManager.on('session:thinking', handleThinking)
+
+        // Handle incoming messages from client
+        ws.on('message', async (data: Buffer) => {
+          try {
+            const payload = JSON.parse(data.toString())
+            const parsed = messageSchema.parse(payload)
+
+            // Send message to Claude
+            await claudeSessionManager.sendMessage(sessionId, parsed.content)
+
+            // Acknowledge message sent
+            ws.send(JSON.stringify({
+              type: 'message_sent',
+              data: { content: parsed.content },
+            }))
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error'
+            ws.send(JSON.stringify({ type: 'error', error: message }))
+          }
+        })
+
+        // Cleanup on disconnect
+        ws.on('close', () => {
+          scanner.stop()
+          scannerManager.stopScanner(sessionId)
+          claudeSessionManager.off('session:update', handleSessionUpdate)
+          claudeSessionManager.off('session:thinking', handleThinking)
+        })
+
+        // Send ready message
+        ws.send(JSON.stringify({
+          type: 'ready',
+          data: { sessionId, status: session.status },
         }))
-      })
-
-      scanner.on('error', (error) => {
-        socket.socket.send(JSON.stringify({
-          type: 'error',
-          error: error.message,
-        }))
-      })
-
-      // Forward session manager events
-      const handleSessionUpdate = (sid: string, state: any) => {
-        if (sid === sessionId) {
-          socket.socket.send(JSON.stringify({
-            type: 'session_update',
-            data: state,
-          }))
-        }
       }
 
-      const handleThinking = (sid: string, isThinking: boolean) => {
-        if (sid === sessionId) {
-          socket.socket.send(JSON.stringify({
-            type: 'thinking',
-            data: { isThinking },
-          }))
-        }
-      }
-
-      claudeSessionManager.on('session:update', handleSessionUpdate)
-      claudeSessionManager.on('session:thinking', handleThinking)
-
-      // Handle incoming messages from client
-      socket.socket.on('message', async (data: Buffer) => {
-        try {
-          const payload = JSON.parse(data.toString())
-          const parsed = messageSchema.parse(payload)
-
-          // Send message to Claude
-          await claudeSessionManager.sendMessage(sessionId, parsed.content)
-
-          // Acknowledge message sent
-          socket.socket.send(JSON.stringify({
-            type: 'message_sent',
-            data: { content: parsed.content },
-          }))
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Unknown error'
-          socket.socket.send(JSON.stringify({ type: 'error', error: message }))
-        }
+      // Start authentication and setup
+      authenticateAndSetup().catch((error) => {
+        console.error('WebSocket setup error:', error)
+        ws.send(JSON.stringify({ type: 'error', error: 'Setup failed' }))
+        ws.close()
       })
-
-      // Cleanup on disconnect
-      socket.socket.on('close', () => {
-        scanner.stop()
-        scannerManager.stopScanner(sessionId)
-        claudeSessionManager.off('session:update', handleSessionUpdate)
-        claudeSessionManager.off('session:thinking', handleThinking)
-      })
-
-      // Send ready message
-      socket.socket.send(JSON.stringify({
-        type: 'ready',
-        data: { sessionId, status: session.status },
-      }))
     })
   })
 

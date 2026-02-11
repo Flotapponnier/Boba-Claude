@@ -91,11 +91,9 @@ export function useClaude() {
   // Connect to WebSocket
   const connectWebSocket = (sessionId: string) => {
     try {
-      const ws = new WebSocket(`${WS_URL}/chat/stream/${sessionId}`, {
-        headers: {
-          Authorization: `Bearer ${LOCAL_TOKEN}`,
-        },
-      } as any)
+      // Browser WebSocket doesn't support custom headers
+      // Pass token in URL query param instead
+      const ws = new WebSocket(`${WS_URL}/chat/stream/${sessionId}?token=${LOCAL_TOKEN}`)
 
       ws.onopen = () => {
         console.log('WebSocket connected')
