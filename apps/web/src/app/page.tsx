@@ -248,11 +248,18 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const { character, setCharacter } = useBobaStore()
 
   const characters = [
-    { id: 'black' as const, name: 'Black Boba', image: CHARACTER_IMAGES.black, bg: '#f5f5f5' },
-    { id: 'orange' as const, name: 'Orange Boba', image: CHARACTER_IMAGES.orange, bg: '#ffe4d6' },
-    { id: 'pink' as const, name: 'Pinky Boba', image: CHARACTER_IMAGES.pink, bg: '#ffe0eb' },
-    { id: 'gold' as const, name: 'Golden Boba', image: CHARACTER_IMAGES.gold, bg: '#fff4d6' },
+    { id: 'black' as const, name: 'Black Boba', image: CHARACTER_IMAGES.black },
+    { id: 'orange' as const, name: 'Orange Boba', image: CHARACTER_IMAGES.orange },
+    { id: 'pink' as const, name: 'Pinky Boba', image: CHARACTER_IMAGES.pink },
+    { id: 'gold' as const, name: 'Golden Boba', image: CHARACTER_IMAGES.gold },
   ]
+
+  const themeBgColors = {
+    black: '#f5f5f5',
+    orange: '#ffe4d6',
+    pink: '#ffe0eb',
+    gold: '#fff4d6',
+  }
 
   return (
     <div
@@ -280,7 +287,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                 character === char.id ? 'ring-4 ring-gray-400' : ''
               }`}
               style={{
-                backgroundColor: char.bg,
+                backgroundColor: themeBgColors[character],
               }}
             >
               <div className="relative w-20 h-20 mx-auto mb-2 animate-float">
