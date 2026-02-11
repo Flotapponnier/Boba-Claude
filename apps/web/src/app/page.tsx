@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useChatStore, useBobaStore } from '@/lib/store'
 import Image from 'next/image'
 import { Settings, Send, MessageSquare, Clock } from 'lucide-react'
@@ -13,10 +13,15 @@ const CHARACTER_IMAGES = {
 }
 
 export default function HomePage() {
+  const [mounted, setMounted] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [input, setInput] = useState('')
   const { messages, isLoading, addMessage, setLoading } = useChatStore()
   const { character } = useBobaStore()
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const handleSendMessage = async () => {
     if (!input.trim()) return
@@ -33,6 +38,22 @@ export default function HomePage() {
       })
       setLoading(false)
     }, 2000)
+  }
+
+  if (!mounted) {
+    return (
+      <div className="flex h-screen items-center justify-center" style={{ backgroundColor: 'var(--bg-primary)' }}>
+        <div className="relative w-32 h-32">
+          <Image
+            src="/assets/branding/boba.png"
+            alt="Loading..."
+            fill
+            className="object-contain animate-rotate-slow"
+            unoptimized
+          />
+        </div>
+      </div>
+    )
   }
 
   return (
