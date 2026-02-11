@@ -98,18 +98,21 @@ export function startSocket(app: FastifyInstance) {
         try {
           // data.data is the JSON string from Claude
           const claudeMessage = JSON.parse(data.data)
-          logger.debug(`[Daemon] Claude message type: ${claudeMessage.type}`)
+          console.log('[Daemon] Claude message:', JSON.stringify(claudeMessage, null, 2))
 
           // Forward to frontend
           const frontendSocket = frontendSockets.get(sessionId)
-          if (!frontendSocket) return
+          if (!frontendSocket) {
+            console.log('[Daemon] No frontend socket for session:', sessionId)
+            return
+          }
 
           // Handle different message types
           if (claudeMessage.type === 'content_block_delta' && claudeMessage.delta?.type === 'text_delta') {
             // Streaming text chunk
+            console.log('[Daemon] Sending content_delta to frontend:', claudeMessage.delta.text)
             frontendSocket.emit('claude_message', {
-              type: 'content_delta',
-              data: {
+              delta: {
                 text: claudeMessage.delta.text,
                 role: 'assistant',
               },
@@ -120,16 +123,43 @@ export function startSocket(app: FastifyInstance) {
               ? claudeMessage.content.map((c: any) => c.text || '').join('')
               : claudeMessage.content?.text || claudeMessage.content || ''
 
+            console.log('[Daemon] Sending full message to frontend:', content)
             frontendSocket.emit('claude_message', {
-              type: 'message',
-              data: {
+              message: {
+                type: 'text',
                 text: content,
                 role: 'assistant',
               },
             })
+          } else if (claudeMessage.type === 'assistant') {
+            // Handle assistant message type - extract text from content array
+            const messageObj = claudeMessage.message
+            let text = ''
+            if (messageObj && Array.isArray(messageObj.content)) {
+              text = messageObj.content
+                .filter((c: any) => c.type === 'text')
+                .map((c: any) => c.text)
+                .join('')
+            }
+
+            if (text) {
+              console.log('[Daemon] Sending assistant message to frontend:', text)
+              frontendSocket.emit('claude_message', {
+                message: {
+                  type: 'text',
+                  text,
+                  role: 'assistant',
+                },
+              })
+            }
+          } else if (claudeMessage.type === 'system' || claudeMessage.type === 'result') {
+            // Ignore system and result messages
+            console.log('[Daemon] Ignoring message type:', claudeMessage.type)
+          } else {
+            console.log('[Daemon] Unhandled message type:', claudeMessage.type)
           }
         } catch (err) {
-          logger.error(`[Daemon] Failed to parse Claude output:`, err)
+          console.error('[Daemon] Failed to parse Claude output:', err, 'Raw data:', data.data)
         }
       })
 
