@@ -1,7 +1,6 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
-import websocket from '@fastify/websocket'
 import { env } from './config/env'
 import { logger } from './utils/logger'
 import { errorHandler } from './middleware/error'
@@ -12,6 +11,7 @@ import { oauthRoutes } from './routes/oauth'
 import { connectRoutes } from './routes/connect'
 import { devRoutes } from './routes/dev'
 import { chatRoutes } from './routes/chat'
+import { startSocket } from './socket'
 
 export async function buildServer() {
   const fastify = Fastify({
@@ -29,9 +29,6 @@ export async function buildServer() {
     secret: env.JWT_SECRET,
   })
 
-  // WebSocket
-  await fastify.register(websocket)
-
   // Decorate request with authenticate method
   fastify.decorate('authenticate', authMiddleware)
 
@@ -45,6 +42,10 @@ export async function buildServer() {
   await fastify.register(connectRoutes)
   await fastify.register(chatRoutes)
   await fastify.register(devRoutes)
+
+  // Socket.IO after routes
+  await fastify.ready()
+  startSocket(fastify)
 
   return fastify
 }

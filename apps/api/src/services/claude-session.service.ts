@@ -1,11 +1,9 @@
 import { spawn, ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
+import { createInterface } from 'readline'
 import { tokenService } from './token.service'
 import { logger } from '../utils/logger'
 import { randomUUID } from 'crypto'
-import * as os from 'os'
-import * as path from 'path'
-import * as fs from 'fs'
 
 export interface SessionMessage {
   role: 'user' | 'assistant'
@@ -29,21 +27,9 @@ export interface SessionState {
 export class ClaudeSessionManager extends EventEmitter {
   private sessions = new Map<string, SessionState>()
   private processes = new Map<string, ChildProcess>()
-  private sessionDir: string
 
   constructor() {
     super()
-    this.sessionDir = path.join(os.homedir(), '.boba', 'sessions')
-    this.ensureSessionDir()
-  }
-
-  /**
-   * Ensure session directory exists
-   */
-  private ensureSessionDir() {
-    if (!fs.existsSync(this.sessionDir)) {
-      fs.mkdirSync(this.sessionDir, { recursive: true })
-    }
   }
 
   /**
@@ -87,93 +73,36 @@ export class ClaudeSessionManager extends EventEmitter {
   }
 
   /**
-   * Spawn Claude CLI process
+   * Spawn Claude CLI process - just validate it works
    */
   private async spawnClaude(sessionId: string, oauthToken: string): Promise<void> {
+    // Test that claude command works
     return new Promise((resolve, reject) => {
-      // Check if claude CLI is available
-      const claudeCommand = 'claude'
-
-      // Spawn process with OAuth token (like Happy does)
-      const child = spawn(claudeCommand, [
-        '--session-id', sessionId,
-      ], {
+      const child = spawn('claude', ['--version'], {
         env: {
           ...process.env,
-          CLAUDE_CODE_OAUTH_TOKEN: oauthToken, // Use OAuth token like Happy
+          CLAUDE_CODE_OAUTH_TOKEN: oauthToken,
         },
-        stdio: ['pipe', 'pipe', 'pipe'],
       })
 
-      this.processes.set(sessionId, child)
-
-      // Handle stdout
-      child.stdout?.on('data', (data: Buffer) => {
-        const output = data.toString()
-        this.handleClaudeOutput(sessionId, output)
-      })
-
-      // Handle stderr
-      child.stderr?.on('data', (data: Buffer) => {
-        logger.error(`[Session ${sessionId}] Claude stderr:`, data.toString())
-      })
-
-      // Handle process exit
       child.on('exit', (code) => {
-        logger.info(`[Session ${sessionId}] Claude process exited with code ${code}`)
-        const session = this.sessions.get(sessionId)
-        if (session) {
-          session.status = code === 0 ? 'stopped' : 'error'
-          this.emit('session:exit', sessionId, code)
+        if (code === 0) {
+          resolve()
+        } else {
+          reject(new Error(`Claude CLI not available (exit code: ${code})`))
         }
-        this.processes.delete(sessionId)
       })
 
-      // Handle process errors
       child.on('error', (error) => {
-        logger.error(`[Session ${sessionId}] Claude process error:`, error)
         reject(error)
       })
 
-      // Wait a bit to see if process starts successfully
-      setTimeout(() => {
-        if (child.exitCode === null) {
-          resolve()
-        } else {
-          reject(new Error(`Claude process failed to start (exit code: ${child.exitCode})`))
-        }
-      }, 1000)
+      setTimeout(() => reject(new Error('Claude CLI timeout')), 5000)
     })
   }
 
   /**
-   * Handle Claude output
-   */
-  private handleClaudeOutput(sessionId: string, output: string) {
-    const session = this.sessions.get(sessionId)
-    if (!session) return
-
-    try {
-      // Try to parse as JSON (if --json mode)
-      const lines = output.trim().split('\n')
-      for (const line of lines) {
-        if (!line.trim()) continue
-
-        try {
-          const message = JSON.parse(line)
-          this.handleClaudeMessage(sessionId, message)
-        } catch {
-          // Not JSON, treat as plain text
-          this.emit('session:output', sessionId, line)
-        }
-      }
-    } catch (error) {
-      logger.error(`[Session ${sessionId}] Failed to parse Claude output:`, error)
-    }
-  }
-
-  /**
-   * Handle structured Claude message
+   * Handle structured Claude message from stream-json
    */
   private handleClaudeMessage(sessionId: string, message: any) {
     const session = this.sessions.get(sessionId)
@@ -200,7 +129,7 @@ export class ClaudeSessionManager extends EventEmitter {
   }
 
   /**
-   * Send message to Claude
+   * Send message to Claude using --print with stream-json
    */
   async sendMessage(sessionId: string, message: string): Promise<void> {
     const session = this.sessions.get(sessionId)
@@ -212,9 +141,10 @@ export class ClaudeSessionManager extends EventEmitter {
       throw new Error(`Session ${sessionId} is not ready (status: ${session.status})`)
     }
 
-    const process = this.processes.get(sessionId)
-    if (!process || !process.stdin) {
-      throw new Error(`Session ${sessionId} has no active process`)
+    // Get OAuth token
+    const oauthToken = await tokenService.getToken(session.userId, 'anthropic')
+    if (!oauthToken) {
+      throw new Error('OAuth token not found')
     }
 
     // Add user message to history
@@ -225,11 +155,58 @@ export class ClaudeSessionManager extends EventEmitter {
     })
 
     session.status = 'running'
+    session.isThinking = true
+    this.emit('session:thinking', sessionId, true)
 
-    // Send to Claude via stdin
-    process.stdin.write(message + '\n')
+    logger.info(`[Session ${sessionId}] Sending message with --print: ${message.substring(0, 50)}...`)
 
-    logger.info(`[Session ${sessionId}] Sent message: ${message.substring(0, 50)}...`)
+    // Spawn claude with --print and --output-format stream-json
+    const args = [
+      '--print', message,
+      '--output-format', 'stream-json',
+      '--resume', sessionId,
+    ]
+
+    const child = spawn('claude', args, {
+      env: {
+        ...process.env,
+        CLAUDE_CODE_OAUTH_TOKEN: oauthToken,
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+
+    // Parse JSONL from stdout
+    const rl = createInterface({ input: child.stdout! })
+
+    rl.on('line', (line) => {
+      if (!line.trim()) return
+
+      try {
+        const msg = JSON.parse(line)
+        this.handleClaudeMessage(sessionId, msg)
+      } catch (err) {
+        logger.debug(`[Session ${sessionId}] Non-JSON: ${line.substring(0, 100)}`)
+      }
+    })
+
+    child.stderr?.on('data', (data: Buffer) => {
+      logger.error(`[Session ${sessionId}] stderr: ${data.toString()}`)
+    })
+
+    child.on('exit', (code) => {
+      session.isThinking = false
+      session.status = code === 0 ? 'ready' : 'error'
+      this.emit('session:thinking', sessionId, false)
+      rl.close()
+      logger.info(`[Session ${sessionId}] --print exited with ${code}`)
+    })
+
+    child.on('error', (error) => {
+      session.isThinking = false
+      session.status = 'error'
+      this.emit('session:thinking', sessionId, false)
+      logger.error(`[Session ${sessionId}] error:`, error)
+    })
   }
 
   /**

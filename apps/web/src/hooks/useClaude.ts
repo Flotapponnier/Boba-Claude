@@ -2,9 +2,9 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useChatStore } from '@/lib/store'
+import { io, Socket } from 'socket.io-client'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
-const WS_URL = API_URL.replace('http://', 'ws://').replace('https://', 'wss://')
 
 // Local-only mode - no user authentication needed
 const LOCAL_TOKEN = 'local-session'
@@ -24,108 +24,101 @@ export function useClaude() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const wsRef = useRef<WebSocket | null>(null)
+  const socketRef = useRef<Socket | null>(null)
   const { addMessage, setLoading } = useChatStore()
 
-  // Start OAuth flow
+  // Connect to daemon (no OAuth needed in local mode)
   const connectClaude = async () => {
     try {
       setError(null)
-
-      const response = await fetch(`${API_URL}/connect/claude`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${LOCAL_TOKEN}`,
-        },
-        body: JSON.stringify({}),
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to start OAuth flow')
-      }
-
-      const data = await response.json()
-      if (data.success) {
-        // OAuth successful, create session
-        await createSession()
-      }
+      // Directly try to connect to daemon
+      await createSession()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to connect')
       console.error('Connect error:', err)
     }
   }
 
-  // Create Claude Code session
+  // Connect to daemon session (daemon-only mode)
   const createSession = async () => {
     try {
       setIsConnecting(true)
       setError(null)
 
-      const response = await fetch(`${API_URL}/chat/session`, {
-        method: 'POST',
+      // Get daemon session
+      const daemonResponse = await fetch(`${API_URL}/chat/daemon-session`, {
         headers: {
-          'Content-Type': 'application/json',
           Authorization: `Bearer ${LOCAL_TOKEN}`,
         },
-        body: JSON.stringify({}),
       })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to create session')
+      if (!daemonResponse.ok) {
+        throw new Error('No daemon connected. Please start boba-daemon locally.')
       }
 
-      const data = await response.json()
+      const data = await daemonResponse.json()
+      console.log('Found daemon session:', data.sessionId)
       setSessionId(data.sessionId)
 
-      // Connect WebSocket
-      connectWebSocket(data.sessionId)
+      // Connect Socket.IO
+      connectSocket(data.sessionId)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create session')
+      setError(err instanceof Error ? err.message : 'Failed to connect to daemon')
       setIsConnecting(false)
       console.error('Session creation error:', err)
     }
   }
 
-  // Connect to WebSocket
-  const connectWebSocket = (sessionId: string) => {
+  // Connect to Socket.IO
+  const connectSocket = (sessionId: string) => {
     try {
-      // Browser WebSocket doesn't support custom headers
-      // Pass token in URL query param instead
-      const ws = new WebSocket(`${WS_URL}/chat/stream/${sessionId}?token=${LOCAL_TOKEN}`)
+      const socket = io(API_URL, {
+        auth: {
+          token: LOCAL_TOKEN,
+          sessionId,
+        },
+        transports: ['websocket', 'polling'],
+      })
 
-      ws.onopen = () => {
-        console.log('WebSocket connected')
+      socket.on('connect', () => {
+        console.log('Socket.IO connected')
         setIsConnected(true)
         setIsConnecting(false)
         setError(null)
-      }
+      })
 
-      ws.onmessage = (event) => {
-        try {
-          const message: ClaudeMessage = JSON.parse(event.data)
-          handleClaudeMessage(message)
-        } catch (err) {
-          console.error('Failed to parse message:', err)
-        }
-      }
+      socket.on('ready', (data) => {
+        console.log('Session ready:', data)
+      })
 
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error)
-        setError('WebSocket connection error')
-      }
+      socket.on('claude_message', (data) => {
+        handleClaudeMessage({ type: 'claude_message', ...data })
+      })
 
-      ws.onclose = () => {
-        console.log('WebSocket closed')
+      socket.on('thinking', (data) => {
+        handleClaudeMessage({ type: 'thinking', ...data })
+      })
+
+      socket.on('session_update', (data) => {
+        handleClaudeMessage({ type: 'session_update', ...data })
+      })
+
+      socket.on('error', (data) => {
+        console.error('Socket error:', data)
+        setError(data.error || data.message || 'Socket error')
+        setLoading(false)
+      })
+
+      socket.on('disconnect', () => {
+        console.log('Socket.IO disconnected')
         setIsConnected(false)
         setIsConnecting(false)
-      }
+      })
 
-      wsRef.current = ws
+      socketRef.current = socket
     } catch (err) {
-      console.error('WebSocket connection error:', err)
-      setError('Failed to connect WebSocket')
+      console.error('Socket connection error:', err)
+      setError('Failed to connect socket')
       setIsConnecting(false)
     }
   }
@@ -171,16 +164,16 @@ export function useClaude() {
 
   // Send message to Claude
   const sendMessage = useCallback((content: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+    if (!socketRef.current || !socketRef.current.connected) {
       setError('Not connected to Claude')
       return
     }
 
     try {
-      wsRef.current.send(JSON.stringify({
+      socketRef.current.emit('message', {
         type: 'message',
         content,
-      }))
+      })
       setLoading(true)
     } catch (err) {
       console.error('Failed to send message:', err)
@@ -190,9 +183,9 @@ export function useClaude() {
 
   // Disconnect
   const disconnect = useCallback(async () => {
-    if (wsRef.current) {
-      wsRef.current.close()
-      wsRef.current = null
+    if (socketRef.current) {
+      socketRef.current.disconnect()
+      socketRef.current = null
     }
 
     if (sessionId) {
@@ -215,8 +208,8 @@ export function useClaude() {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close()
+      if (socketRef.current) {
+        socketRef.current.disconnect()
       }
     }
   }, [])
