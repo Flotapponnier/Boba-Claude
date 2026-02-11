@@ -16,6 +16,7 @@ export default function HomePage() {
   const [mounted, setMounted] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [input, setInput] = useState('')
+  const [isConnected, setIsConnected] = useState(false)
   const { messages, isLoading, addMessage, setLoading } = useChatStore()
   const { character } = useBobaStore()
 
@@ -65,7 +66,7 @@ export default function HomePage() {
       >
         {/* Sidebar Header */}
         <div className="p-4 border-b" style={{ borderColor: 'var(--bg-secondary)' }}>
-          <div className="relative w-full h-24">
+          <div className="relative w-full h-24 mb-3">
             <Image
               src="/banner.png"
               alt="Boba Claude"
@@ -74,6 +75,18 @@ export default function HomePage() {
               unoptimized
               priority
             />
+          </div>
+          {/* Connection Status */}
+          <div className="flex items-center gap-2 justify-center">
+            <div
+              className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
+            />
+            <span
+              className="text-xs font-medium"
+              style={{ color: character === 'black' ? '#666666' : 'var(--text-secondary)' }}
+            >
+              {isConnected ? 'Connected' : 'Disconnected'}
+            </span>
           </div>
         </div>
 
@@ -127,7 +140,7 @@ export default function HomePage() {
         <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4 max-w-4xl mx-auto w-full">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full">
-              <div className="relative w-32 h-32 mb-4">
+              <div className="relative w-32 h-32 mb-4 animate-float">
                 <Image
                   src={CHARACTER_IMAGES[character]}
                   alt="Boba"
@@ -137,7 +150,7 @@ export default function HomePage() {
                 />
               </div>
               <p className="text-lg font-medium" style={{ color: 'var(--text-secondary)' }}>
-                Say hi to your Boba friend!
+                Start your Boba Claude session !
               </p>
             </div>
           ) : (
@@ -270,7 +283,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                 backgroundColor: char.id === 'black' ? '#f5f5f5' : 'var(--bg-secondary)',
               }}
             >
-              <div className="relative w-20 h-20 mx-auto mb-2">
+              <div className="relative w-20 h-20 mx-auto mb-2 animate-float">
                 <Image
                   src={char.image}
                   alt={char.name}
