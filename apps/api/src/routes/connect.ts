@@ -65,30 +65,4 @@ export async function connectRoutes(fastify: FastifyInstance) {
     }
   })
 
-  // Save API key for Claude Code CLI
-  fastify.post('/connect/api-key', {
-    onRequest: [fastify.authenticate],
-    schema: {
-      body: {
-        type: 'object',
-        required: ['apiKey'],
-        properties: {
-          apiKey: { type: 'string', pattern: '^sk-ant-' }
-        }
-      }
-    }
-  }, async (request, reply) => {
-    try {
-      const { apiKey } = request.body as { apiKey: string }
-
-      // Store API key encrypted (use 'anthropic-api' to separate from OAuth token)
-      const { tokenService } = await import('../services/token.service')
-      await tokenService.saveToken(request.userId!, 'anthropic-api' as any, apiKey)
-
-      return { success: true, message: 'API key saved successfully' }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error'
-      return reply.code(500).send({ error: message })
-    }
-  })
 }

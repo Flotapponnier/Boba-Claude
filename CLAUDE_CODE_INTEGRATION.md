@@ -23,7 +23,7 @@ Complete implementation of Claude Code CLI integration for Boba Claude.
 │            └───────────────┴─────────────────┘              │
 └─────────────────────────────────────────────────────────────┘
                               │
-                    spawn + ANTHROPIC_AUTH_TOKEN
+                    spawn + CLAUDE_CODE_OAUTH_TOKEN
                               │
 ┌─────────────────────────────────────────────────────────────┐
 │                    Claude Code CLI                           │
@@ -35,27 +35,23 @@ Complete implementation of Claude Code CLI integration for Boba Claude.
 
 ## Authentication Flow
 
-### Dual Authentication System
+### OAuth-Only Authentication
 
-Boba Claude uses a **dual authentication** approach, similar to Happy.engineering:
+Boba Claude uses **OAuth-only authentication** with Claude.ai, exactly like Happy.engineering:
 
-1. **OAuth Token** (for authorization)
-   - Used to connect your Claude account
+1. **OAuth Token** (for everything)
+   - Used to connect your Claude account via OAuth flow
    - Proves you own the Claude account
+   - Used directly by Claude Code CLI via `CLAUDE_CODE_OAUTH_TOKEN`
    - Stored encrypted as `vendor: "anthropic"`
+   - No separate API key needed!
 
-2. **API Key** (for CLI execution)
-   - Used to authenticate Claude Code CLI
-   - Required for `ANTHROPIC_AUTH_TOKEN` env var
-   - Stored encrypted as `vendor: "anthropic-api"`
-   - Get yours at: https://console.anthropic.com/settings/keys
+### Why OAuth-Only?
 
-### Why Both?
-
-- **OAuth** = Proves account ownership, used for UI authorization
-- **API Key** = Actual authentication credential for API calls
-
-Happy.engineering uses the same approach - OAuth for account linking, but requires API keys for the actual CLI execution.
+- **Simpler flow**: One authentication method for everything
+- **No API key management**: Users don't need Anthropic API keys
+- **Matches Claude Code**: Official Claude Code CLI uses OAuth tokens
+- **Same as Happy**: Happy.engineering uses this exact approach
 
 ## Complete Flow
 
@@ -79,20 +75,18 @@ POST /auth/login
 # Returns: { "token": "JWT_TOKEN", "user": {...} }
 ```
 
-### 2. Save API Key
+### 2. Connect Claude Account (OAuth)
 
 ```bash
-POST /connect/api-key
+POST /connect/claude
 Authorization: Bearer <JWT>
-{
-  "apiKey": "sk-ant-..."
-}
+{}
 ```
 
-Your API key is:
-- ✅ Encrypted with AES-256-GCM before storage
-- ✅ Never exposed in logs or responses
-- ✅ Used only for spawning Claude CLI
+This will:
+- ✅ Open Claude.ai in your browser for OAuth
+- ✅ Store OAuth token encrypted with AES-256-GCM
+- ✅ Return when authentication completes
 
 ### 3. Create Claude Session
 
@@ -109,8 +103,8 @@ Authorization: Bearer <JWT>
 ```
 
 This:
-1. Retrieves your encrypted API key
-2. Spawns Claude CLI with `ANTHROPIC_AUTH_TOKEN=<your-api-key>`
+1. Retrieves your encrypted OAuth token
+2. Spawns Claude CLI with `CLAUDE_CODE_OAUTH_TOKEN=<your-oauth-token>`
 3. Initializes session tracking
 4. Returns session ID for WebSocket connection
 
@@ -177,7 +171,7 @@ Authorization: Bearer <JWT>
 
 Responsibilities:
 - Spawn Claude CLI as child process
-- Set `ANTHROPIC_AUTH_TOKEN` environment variable
+- Set `CLAUDE_CODE_OAUTH_TOKEN` environment variable
 - Track session state (starting, ready, running, error, stopped)
 - Handle stdin/stdout communication
 - Emit events for session updates
@@ -220,7 +214,7 @@ Features:
 
 ### Token Encryption
 
-All tokens (OAuth and API keys) are encrypted before storage:
+All OAuth tokens are encrypted before storage:
 
 ```typescript
 // AES-256-GCM encryption
@@ -249,15 +243,14 @@ CLAUDE_CLIENT_ID=<uuid>       # Public OAuth client ID
 ### Quick Test
 
 ```bash
-./test-claude-flow.sh
+./test-oauth-only.sh
 ```
 
-This interactive script will:
+This script will:
 1. Login to your account
-2. Prompt for API key
-3. Save API key encrypted
-4. Create a session
-5. Show WebSocket connection details
+2. Check OAuth connection status
+3. Create a Claude Code session
+4. Show WebSocket connection details
 
 ### Manual Testing
 
@@ -268,11 +261,12 @@ TOKEN=$(curl -s -X POST http://localhost:4000/auth/login \
   -d '{"email":"test@boba.com","password":"password123"}' \
   | jq -r '.token')
 
-# 2. Save API key
-curl -X POST http://localhost:4000/connect/api-key \
+# 2. Connect Claude (OAuth flow)
+curl -X POST http://localhost:4000/connect/claude \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"apiKey":"sk-ant-..."}'
+  -d '{}'
+# Browser will open for OAuth
 
 # 3. Create session
 SESSION_ID=$(curl -s -X POST http://localhost:4000/chat/session \
@@ -303,12 +297,13 @@ Verify installation:
 claude --version
 ```
 
-### API Key
+### OAuth Authentication
 
-Get your Claude API key:
-1. Go to https://console.anthropic.com/settings/keys
-2. Create new API key
-3. Save it securely (starts with `sk-ant-`)
+Connect your Claude account:
+1. Run `POST /connect/claude` or click "Connect Claude" in the UI
+2. Browser opens to Claude.ai for OAuth
+3. Approve the connection
+4. You're ready to chat!
 
 ## Troubleshooting
 
@@ -322,14 +317,15 @@ which claude
 https://docs.anthropic.com/claude/docs/claude-cli
 ```
 
-### "No API key found"
+### "No Claude OAuth token found"
 
 ```bash
-# Save your API key first
-curl -X POST http://localhost:4000/connect/api-key \
+# Connect your Claude account via OAuth first
+curl -X POST http://localhost:4000/connect/claude \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"apiKey":"sk-ant-..."}'
+  -d '{}'
+# Browser will open for authentication
 ```
 
 ### "Session file not found"
@@ -356,7 +352,7 @@ wscat -c "ws://localhost:4000/chat/stream/<SESSION_ID>" \
 ## Next Steps
 
 1. ✅ OAuth flow working (port 54545)
-2. ✅ API key storage implemented
+2. ✅ OAuth-only authentication (no API key needed!)
 3. ✅ Session manager created
 4. ✅ JSONL scanner implemented
 5. ✅ WebSocket streaming ready
@@ -371,7 +367,7 @@ wscat -c "ws://localhost:4000/chat/stream/<SESSION_ID>" \
 | Feature | Happy | Boba Claude |
 |---------|-------|-------------|
 | OAuth Support | ✅ | ✅ |
-| API Key Storage | ✅ | ✅ |
+| OAuth-Only (no API key) | ✅ | ✅ |
 | Claude CLI Spawning | ✅ | ✅ |
 | JSONL Scanning | ✅ | ✅ |
 | WebSocket Streaming | ✅ | ✅ |
