@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { useChatStore, useBobaStore } from '@/lib/store'
+import { useClaude } from '@/hooks/useClaude'
 import Image from 'next/image'
-import { Settings, Send, MessageSquare, Clock } from 'lucide-react'
+import { Settings, Send, MessageSquare, Clock, Plug, PlugZap } from 'lucide-react'
 
 const CHARACTER_IMAGES = {
   black: '/assets/branding/black_boba.png',
@@ -16,29 +17,23 @@ export default function HomePage() {
   const [mounted, setMounted] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [input, setInput] = useState('')
-  const [isConnected, setIsConnected] = useState(false)
-  const { messages, isLoading, addMessage, setLoading } = useChatStore()
+  const { messages, isLoading, addMessage } = useChatStore()
   const { character } = useBobaStore()
+  const { isConnected, isConnecting, error, connectClaude, disconnect, sendMessage } = useClaude()
 
   useEffect(() => {
     setMounted(true)
   }, [])
 
   const handleSendMessage = async () => {
-    if (!input.trim()) return
+    if (!input.trim() || !isConnected) return
 
+    // Add user message to UI
     addMessage({ role: 'user', content: input })
-    setInput('')
-    setLoading(true)
 
-    // Simulate AI response
-    setTimeout(() => {
-      addMessage({
-        role: 'assistant',
-        content: `This is a demo response to: "${input}". Claude Code integration coming soon!`,
-      })
-      setLoading(false)
-    }, 2000)
+    // Send via WebSocket
+    sendMessage(input)
+    setInput('')
   }
 
   if (!mounted) {
@@ -76,17 +71,54 @@ export default function HomePage() {
               priority
             />
           </div>
-          {/* Connection Status */}
-          <div className="flex items-center gap-2 justify-center">
-            <div
-              className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
-            />
-            <span
-              className="text-xs font-medium"
-              style={{ color: character === 'black' ? '#666666' : 'var(--text-secondary)' }}
+          {/* Connection Status & Button */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 justify-center">
+              <div
+                className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
+              />
+              <span
+                className="text-xs font-medium"
+                style={{ color: character === 'black' ? '#666666' : 'var(--text-secondary)' }}
+              >
+                {isConnecting ? 'Connecting...' : isConnected ? 'Connected' : 'Disconnected'}
+              </span>
+            </div>
+
+            {/* Connect/Disconnect Button */}
+            <button
+              onClick={isConnected ? disconnect : connectClaude}
+              disabled={isConnecting}
+              className="w-full flex items-center gap-2 justify-center p-2 rounded-lg transition-all hover:scale-105 disabled:opacity-50"
+              style={{
+                backgroundColor: isConnected ? '#ef4444' : 'var(--accent)',
+                color: '#ffffff',
+              }}
             >
-              {isConnected ? 'Connected' : 'Disconnected'}
-            </span>
+              {isConnecting ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span className="text-sm font-medium">Connecting...</span>
+                </>
+              ) : isConnected ? (
+                <>
+                  <PlugZap size={16} />
+                  <span className="text-sm font-medium">Disconnect</span>
+                </>
+              ) : (
+                <>
+                  <Plug size={16} />
+                  <span className="text-sm font-medium">Connect Claude</span>
+                </>
+              )}
+            </button>
+
+            {/* Error Display */}
+            {error && (
+              <div className="p-2 rounded-lg bg-red-100 text-red-600 text-xs text-center">
+                {error}
+              </div>
+            )}
           </div>
         </div>
 
@@ -235,17 +267,17 @@ export default function HomePage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder="Type a message..."
+              placeholder={isConnected ? "Type a message..." : "Connect Claude to start chatting..."}
               className="flex-1 p-3 rounded-xl outline-none"
               style={{
                 backgroundColor: 'var(--bg-secondary)',
                 color: 'var(--text-primary)',
               }}
-              disabled={isLoading}
+              disabled={isLoading || !isConnected}
             />
             <button
               onClick={handleSendMessage}
-              disabled={isLoading || !input.trim()}
+              disabled={isLoading || !input.trim() || !isConnected}
               className="p-3 rounded-xl disabled:opacity-50 transition-all hover:scale-105"
               style={{ backgroundColor: 'var(--accent)' }}
             >
