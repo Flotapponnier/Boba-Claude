@@ -76,7 +76,7 @@ export function useClaude() {
     try {
       const response = await fetch(`${API_URL}/oauth/status`, {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${authToken}`,
         },
       })
       const data = await response.json()
@@ -96,7 +96,7 @@ export function useClaude() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${authToken}`,
         },
         body: JSON.stringify({}),
       })
@@ -153,7 +153,7 @@ export function useClaude() {
     try {
       const ws = new WebSocket(`${WS_URL}/chat/stream/${sessionId}`, {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${authToken}`,
         },
       } as any)
 
@@ -262,7 +262,7 @@ export function useClaude() {
         await fetch(`${API_URL}/chat/session/${sessionId}`, {
           method: 'DELETE',
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${authToken}`,
           },
         })
       } catch (err) {

@@ -170,7 +170,7 @@ export default function HomePage() {
 
         {/* Chat Messages */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4 max-w-4xl mx-auto w-full">
-          {messages.length === 0 ? (
+          {!messages || messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full">
               <div className="relative w-32 h-32 mb-4 animate-float">
                 <Image
