@@ -248,10 +248,10 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const { character, setCharacter } = useBobaStore()
 
   const characters = [
-    { id: 'black' as const, name: 'Black Boba', image: CHARACTER_IMAGES.black },
-    { id: 'orange' as const, name: 'Orange Boba', image: CHARACTER_IMAGES.orange },
-    { id: 'pink' as const, name: 'Pinky Boba', image: CHARACTER_IMAGES.pink },
-    { id: 'gold' as const, name: 'Golden Boba', image: CHARACTER_IMAGES.gold },
+    { id: 'black' as const, name: 'Black Boba', image: CHARACTER_IMAGES.black, bg: '#f5f5f5' },
+    { id: 'orange' as const, name: 'Orange Boba', image: CHARACTER_IMAGES.orange, bg: '#ffe4d6' },
+    { id: 'pink' as const, name: 'Pinky Boba', image: CHARACTER_IMAGES.pink, bg: '#ffe0eb' },
+    { id: 'gold' as const, name: 'Golden Boba', image: CHARACTER_IMAGES.gold, bg: '#fff4d6' },
   ]
 
   return (
@@ -261,10 +261,10 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     >
       <div
         className="rounded-2xl p-6 max-w-md w-full"
-        style={{ backgroundColor: 'var(--bg-primary)' }}
+        style={{ backgroundColor: '#ffffff' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-2xl font-bold mb-6" style={{ color: character === 'black' ? '#000000' : 'var(--text-primary)' }}>
+        <h2 className="text-2xl font-bold mb-6" style={{ color: '#000000' }}>
           Choose Your Boba
         </h2>
 
@@ -280,7 +280,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                 character === char.id ? 'ring-4 ring-gray-400' : ''
               }`}
               style={{
-                backgroundColor: char.id === 'black' ? '#f5f5f5' : 'var(--bg-secondary)',
+                backgroundColor: char.bg,
               }}
             >
               <div className="relative w-20 h-20 mx-auto mb-2 animate-float">
@@ -294,7 +294,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
               </div>
               <p
                 className="text-sm font-medium text-center"
-                style={{ color: char.id === 'black' ? '#000000' : 'var(--text-primary)' }}
+                style={{ color: '#000000' }}
               >
                 {char.name}
               </p>
@@ -304,8 +304,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
 
         <button
           onClick={onClose}
-          className="w-full py-3 rounded-xl font-medium text-white"
-          style={{ backgroundColor: 'var(--accent)' }}
+          className="w-full py-3 rounded-xl font-medium"
+          style={{ backgroundColor: '#1a1a1a', color: '#ffffff' }}
         >
           Done
         </button>
