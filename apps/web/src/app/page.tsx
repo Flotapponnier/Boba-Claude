@@ -140,7 +140,7 @@ export default function HomePage() {
         <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4 max-w-4xl mx-auto w-full">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full">
-              <div className="relative w-32 h-32 mb-4 animate-float">
+              <div className="relative w-48 h-48 mb-4 animate-float">
                 <Image
                   src={CHARACTER_IMAGES[character]}
                   alt="Boba"
@@ -189,15 +189,29 @@ export default function HomePage() {
 
           {/* Loading Indicator */}
           {isLoading && (
-            <div className="flex justify-start">
-              <div className="relative w-12 h-12 mr-2">
-                <Image
-                  src={CHARACTER_IMAGES[character]}
-                  alt="Boba"
-                  fill
-                  className="object-contain animate-rotate-slow"
-                  unoptimized
-                />
+            <div className="flex justify-start items-center">
+              <div className="relative w-16 h-16 mr-3">
+                {/* Rotating dots around boba */}
+                <div className="absolute inset-0 animate-spin-slow">
+                  <div className="absolute w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--accent)', top: '8%', left: '50%', transform: 'translateX(-50%)' }}></div>
+                  <div className="absolute w-1 h-1 rounded-full" style={{ backgroundColor: 'var(--accent)', top: '18%', left: '75%' }}></div>
+                  <div className="absolute w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--accent)', top: '50%', left: '90%', transform: 'translateY(-50%)' }}></div>
+                  <div className="absolute w-1 h-1 rounded-full" style={{ backgroundColor: 'var(--accent)', top: '75%', left: '80%' }}></div>
+                  <div className="absolute w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--accent)', top: '92%', left: '50%', transform: 'translateX(-50%)' }}></div>
+                  <div className="absolute w-1 h-1 rounded-full" style={{ backgroundColor: 'var(--accent)', top: '80%', left: '18%' }}></div>
+                  <div className="absolute w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--accent)', top: '50%', left: '5%', transform: 'translateY(-50%)' }}></div>
+                  <div className="absolute w-1 h-1 rounded-full" style={{ backgroundColor: 'var(--accent)', top: '22%', left: '15%' }}></div>
+                </div>
+                {/* Boba character rotating */}
+                <div className="absolute inset-2">
+                  <Image
+                    src={CHARACTER_IMAGES[character]}
+                    alt="Boba"
+                    fill
+                    className="object-contain animate-rotate-slow"
+                    unoptimized
+                  />
+                </div>
               </div>
               <div
                 className="flex items-center p-3 rounded-2xl rounded-bl-none"
