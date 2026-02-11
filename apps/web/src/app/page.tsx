@@ -61,7 +61,7 @@ export default function HomePage() {
       {/* Sidebar */}
       <div
         className="w-64 border-r flex flex-col"
-        style={{ borderColor: 'var(--bg-secondary)', backgroundColor: 'var(--bg-primary)' }}
+        style={{ borderColor: 'var(--bg-secondary)', backgroundColor: character === 'black' ? '#ffffff' : 'var(--bg-primary)' }}
       >
         {/* Sidebar Header */}
         <div className="p-4 border-b" style={{ borderColor: 'var(--bg-secondary)' }}>
@@ -81,20 +81,20 @@ export default function HomePage() {
         <div className="flex-1 p-4 space-y-2">
           <button
             className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-opacity-10 hover:bg-black transition-colors"
-            style={{ color: 'var(--text-primary)' }}
+            style={{ color: character === 'black' ? '#ffffff' : 'var(--text-primary)' }}
           >
             <MessageSquare size={20} />
             <span>New Chat</span>
           </button>
 
           <div className="pt-4">
-            <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>
+            <p className="text-xs font-medium mb-2" style={{ color: character === 'black' ? '#999999' : 'var(--text-secondary)' }}>
               HISTORY
             </p>
             <div className="space-y-1">
               <button
                 className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-opacity-10 hover:bg-black transition-colors text-left"
-                style={{ color: 'var(--text-secondary)' }}
+                style={{ color: character === 'black' ? '#999999' : 'var(--text-secondary)' }}
               >
                 <Clock size={16} />
                 <span className="text-sm truncate">Previous conversation...</span>
@@ -108,7 +108,7 @@ export default function HomePage() {
           <button
             onClick={() => setShowSettings(!showSettings)}
             className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-opacity-10 hover:bg-black transition-colors"
-            style={{ color: 'var(--text-primary)' }}
+            style={{ color: character === 'black' ? '#ffffff' : 'var(--text-primary)' }}
           >
             <Settings size={20} />
             <span>Settings</span>
@@ -117,7 +117,7 @@ export default function HomePage() {
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col" style={{ backgroundColor: 'var(--bg-primary)' }}>
+      <div className="flex-1 flex flex-col" style={{ backgroundColor: character === 'black' ? '#ffffff' : 'var(--bg-primary)' }}>
           {/* Settings Modal */}
         {showSettings && (
           <SettingsModal onClose={() => setShowSettings(false)} />
@@ -251,7 +251,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         style={{ backgroundColor: 'var(--bg-primary)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-2xl font-bold mb-6" style={{ color: 'var(--text-primary)' }}>
+        <h2 className="text-2xl font-bold mb-6" style={{ color: character === 'black' ? '#ffffff' : 'var(--text-primary)' }}>
           Choose Your Boba
         </h2>
 
@@ -267,7 +267,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                 character === char.id ? 'ring-4' : ''
               }`}
               style={{
-                backgroundColor: 'var(--bg-secondary)',
+                backgroundColor: char.id === 'black' ? '#f5f5f5' : 'var(--bg-secondary)',
                 ringColor: 'var(--accent)',
               }}
             >

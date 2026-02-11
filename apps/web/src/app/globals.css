@@ -13,11 +13,11 @@
 
 [data-theme="black"] {
   --bg-primary: #0f0f0f;
-  --bg-secondary: #e5e5e5;
-  --text-primary: #ffffff;
+  --bg-secondary: #f5f5f5;
+  --text-primary: #000000;
   --text-secondary: #666666;
-  --accent: #ffffff;
-  --accent-light: #d0d0d0;
+  --accent: #1a1a1a;
+  --accent-light: #333333;
 }
 
 [data-theme="orange"] {
