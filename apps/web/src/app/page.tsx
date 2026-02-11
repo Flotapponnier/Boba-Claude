@@ -2,10 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { useChatStore, useBobaStore } from '@/lib/store'
-import { useAuth } from '@/hooks/useAuth'
 import { useClaude } from '@/hooks/useClaude'
 import Image from 'next/image'
-import { Settings, Send, MessageSquare, Clock, Plug, PlugZap, LogIn, LogOut } from 'lucide-react'
+import { Settings, Send, MessageSquare, Clock, Plug, PlugZap } from 'lucide-react'
 
 const CHARACTER_IMAGES = {
   black: '/assets/branding/black_boba.png',
@@ -17,12 +16,10 @@ const CHARACTER_IMAGES = {
 export default function HomePage() {
   const [mounted, setMounted] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [showAuth, setShowAuth] = useState(false)
   const [input, setInput] = useState('')
   const { messages, isLoading, addMessage } = useChatStore()
   const { character } = useBobaStore()
-  const { user, token, isAuthenticated, logout } = useAuth()
-  const { isConnected, isConnecting, error, connectClaude, disconnect, sendMessage } = useClaude(token)
+  const { isConnected, isConnecting, error, connectClaude, disconnect, sendMessage } = useClaude()
 
   useEffect(() => {
     setMounted(true)
@@ -52,17 +49,6 @@ export default function HomePage() {
           />
         </div>
       </div>
-    )
-  }
-
-  // Show auth modal if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <>
-        <div className="flex h-screen items-center justify-center" style={{ backgroundColor: 'var(--bg-primary)' }}>
-          <AuthModal />
-        </div>
-      </>
     )
   }
 
@@ -162,8 +148,8 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Settings & Logout */}
-        <div className="p-4 border-t space-y-2" style={{ borderColor: 'var(--bg-secondary)' }}>
+        {/* Settings Button */}
+        <div className="p-4 border-t" style={{ borderColor: 'var(--bg-secondary)' }}>
           <button
             onClick={() => setShowSettings(!showSettings)}
             className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-opacity-10 hover:bg-black transition-colors"
@@ -171,13 +157,6 @@ export default function HomePage() {
           >
             <Settings size={20} />
             <span>Settings</span>
-          </button>
-          <button
-            onClick={logout}
-            className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-opacity-10 hover:bg-black transition-colors text-red-500"
-          >
-            <LogOut size={20} />
-            <span>Logout</span>
           </button>
         </div>
       </div>
@@ -306,115 +285,6 @@ export default function HomePage() {
             </button>
           </div>
         </div>
-      </div>
-    </div>
-  )
-}
-
-function AuthModal() {
-  const { login, register } = useAuth()
-  const [isLogin, setIsLogin] = useState(true)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-
-    try {
-      const result = isLogin
-        ? await login(email, password)
-        : await register(email, password, name)
-
-      if (!result.success) {
-        setError(result.error || 'Authentication failed')
-      }
-    } catch (err) {
-      setError('An error occurred')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className="w-full max-w-md p-8 rounded-2xl bg-white shadow-2xl">
-      <div className="relative w-32 h-32 mx-auto mb-6 animate-float">
-        <Image
-          src="/assets/branding/boba.png"
-          alt="Boba Claude"
-          fill
-          className="object-contain"
-          unoptimized
-        />
-      </div>
-
-      <h1 className="text-3xl font-bold text-center mb-2 text-gray-900">
-        Boba Claude
-      </h1>
-      <p className="text-center text-gray-600 mb-8">
-        {isLogin ? 'Welcome back!' : 'Create your account'}
-      </p>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {!isLogin && (
-          <input
-            type="text"
-            placeholder="Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required={!isLogin}
-            className="w-full p-3 rounded-xl border border-gray-300 outline-none focus:border-orange-400 text-gray-900"
-          />
-        )}
-
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          className="w-full p-3 rounded-xl border border-gray-300 outline-none focus:border-orange-400 text-gray-900"
-        />
-
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          minLength={6}
-          className="w-full p-3 rounded-xl border border-gray-300 outline-none focus:border-orange-400 text-gray-900"
-        />
-
-        {error && (
-          <div className="p-3 rounded-lg bg-red-100 text-red-600 text-sm">
-            {error}
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full p-3 rounded-xl bg-orange-400 hover:bg-orange-500 text-white font-medium transition-colors disabled:opacity-50"
-        >
-          {loading ? 'Loading...' : isLogin ? 'Login' : 'Sign Up'}
-        </button>
-      </form>
-
-      <div className="mt-6 text-center">
-        <button
-          onClick={() => {
-            setIsLogin(!isLogin)
-            setError('')
-          }}
-          className="text-orange-400 hover:text-orange-500 text-sm"
-        >
-          {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Login'}
-        </button>
       </div>
     </div>
   )

@@ -15,28 +15,61 @@ interface ClaudeMessage {
   error?: string
 }
 
-export function useClaude(token: string | null) {
+// Auto-login for local dev - create/login with test account
+const getOrCreateToken = async (): Promise<string> => {
+  const storedToken = localStorage.getItem('boba_token')
+  if (storedToken) return storedToken
+
+  // Auto-register test user
+  try {
+    const response = await fetch(`${API_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'local@boba.com',
+        password: 'password123',
+        name: 'Local User',
+      }),
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      localStorage.setItem('boba_token', data.token)
+      return data.token
+    }
+
+    // If user exists, login
+    const loginResponse = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'local@boba.com',
+        password: 'password123',
+      }),
+    })
+
+    const loginData = await loginResponse.json()
+    localStorage.setItem('boba_token', loginData.token)
+    return loginData.token
+  } catch (err) {
+    throw new Error('Failed to authenticate')
+  }
+}
+
+export function useClaude() {
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [token, setToken] = useState<string | null>(null)
 
   const wsRef = useRef<WebSocket | null>(null)
   const { addMessage, setLoading } = useChatStore()
 
-  // Early return if no token
-  if (!token) {
-    return {
-      isConnected: false,
-      isConnecting: false,
-      error: 'Not authenticated',
-      sessionId: null,
-      connectClaude: async () => {},
-      disconnect: async () => {},
-      sendMessage: () => {},
-      checkOAuthStatus: async () => false,
-    }
-  }
+  // Auto-login on mount
+  useEffect(() => {
+    getOrCreateToken().then(setToken).catch(console.error)
+  }, [])
 
   // Check OAuth status
   const checkOAuthStatus = async () => {
