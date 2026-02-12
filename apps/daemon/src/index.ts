@@ -105,7 +105,6 @@ async function main() {
     if (socket) {
       socket.disconnect()
     }
-    hookServer.stop()
     process.exit(0)
   })
 
