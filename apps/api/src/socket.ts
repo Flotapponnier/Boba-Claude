@@ -190,6 +190,22 @@ export function startSocket(app: FastifyInstance) {
         }
       })
 
+      // Handle permission requests from daemon's hook server
+      socket.on('permission_request', (data: any) => {
+        logger.info(`[Daemon] Permission request: ${data.toolName}`)
+        const frontendSocket = frontendSockets.get(sessionId)
+        if (frontendSocket) {
+          frontendSocket.emit('permission_request', data)
+        }
+      })
+
+      // Forward permission responses from frontend to daemon
+      socket.on('permission_response', (data: any) => {
+        logger.info(`[API] Permission response: ${data.allowed}`)
+        // This will be picked up by the daemon's hook server
+        socket.emit('permission_response', data)
+      })
+
       socket.on('disconnect', () => {
         logger.info(`Daemon disconnected for session ${sessionId}`)
         daemonSockets.delete(sessionId)
@@ -246,6 +262,16 @@ export function startSocket(app: FastifyInstance) {
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error'
         socket.emit('error', { type: 'error', error: message })
+      }
+    })
+
+    // Handle permission responses from frontend
+    socket.on('permission_response', (data: any) => {
+      logger.info(`[Frontend] Permission response: ${data.allowed}`)
+      // Forward to daemon
+      const daemonSocket = daemonSockets.get(sessionId)
+      if (daemonSocket) {
+        daemonSocket.emit('permission_response', data)
       }
     })
 

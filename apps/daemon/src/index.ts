@@ -3,17 +3,24 @@ import { io, Socket } from 'socket.io-client'
 import { spawnClaude } from './claude-spawner.js'
 import { ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
+import { HookServer } from './hook-server.js'
 
 const SERVER_URL = process.env.BOBA_SERVER_URL || 'http://localhost:4000'
 const LOCAL_TOKEN = 'local-session'
+const HOOK_PORT = 3001
 
 let socket: Socket | null = null
 let claudeProcess: ChildProcess | null = null
 let currentSessionId: string | null = null
+let hookServer: HookServer | null = null
 
 async function main() {
   console.log('[Boba Daemon] Starting...')
   console.log(`[Boba Daemon] Server: ${SERVER_URL}`)
+
+  // Start hook server for tool permissions
+  hookServer = new HookServer(HOOK_PORT)
+  await hookServer.start()
 
   // Spawn Claude in SDK mode
   console.log('[Boba Daemon] Spawning Claude CLI...')
@@ -67,6 +74,10 @@ async function main() {
 
     socket.on('connect', () => {
       console.log(`[Boba Daemon] Connected with session ${sessionId}`)
+      // Connect hook server to socket for permission forwarding
+      if (hookServer) {
+        hookServer.setSocket(socket)
+      }
     })
 
     socket.on('disconnect', () => {
@@ -97,13 +108,16 @@ async function main() {
   console.log('[Boba Daemon] Waiting for Claude to start...')
 
   // Cleanup on exit
-  process.on('SIGINT', () => {
+  process.on('SIGINT', async () => {
     console.log('\n[Boba Daemon] Shutting down...')
     if (claudeProcess) {
       claudeProcess.kill('SIGTERM')
     }
     if (socket) {
       socket.disconnect()
+    }
+    if (hookServer) {
+      await hookServer.stop()
     }
     process.exit(0)
   })

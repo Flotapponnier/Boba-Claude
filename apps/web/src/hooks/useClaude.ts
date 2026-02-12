@@ -23,6 +23,7 @@ export function useClaude() {
   const [isConnecting, setIsConnecting] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [permissionRequest, setPermissionRequest] = useState<any>(null)
 
   const socketRef = useRef<Socket | null>(null)
   const { addMessage, setLoading } = useChatStore()
@@ -102,6 +103,11 @@ export function useClaude() {
 
       socket.on('session_update', (data) => {
         handleClaudeMessage({ type: 'session_update', ...data })
+      })
+
+      socket.on('permission_request', (data) => {
+        console.log('[Frontend] Permission request:', data)
+        setPermissionRequest(data)
       })
 
       socket.on('error', (data) => {
@@ -195,6 +201,18 @@ export function useClaude() {
     }
   }, [setLoading])
 
+  // Send permission response
+  const respondToPermission = useCallback((allowed: boolean) => {
+    if (!socketRef.current || !permissionRequest) return
+
+    socketRef.current.emit('permission_response', {
+      requestId: permissionRequest.requestId,
+      allowed,
+    })
+
+    setPermissionRequest(null)
+  }, [permissionRequest])
+
   // Disconnect
   const disconnect = useCallback(async () => {
     if (socketRef.current) {
@@ -233,8 +251,10 @@ export function useClaude() {
     isConnecting,
     error,
     sessionId,
+    permissionRequest,
     connectClaude,
     disconnect,
     sendMessage,
+    respondToPermission,
   }
 }

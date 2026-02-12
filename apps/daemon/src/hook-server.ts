@@ -1,100 +1,113 @@
-import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http'
+import { createServer, IncomingMessage, ServerResponse } from 'node:http'
+import { Socket } from 'socket.io-client'
 
-export interface SessionHookData {
-  session_id?: string
-  sessionId?: string
-  transcript_path?: string
-  cwd?: string
-  hook_event_name?: string
-  source?: string
-  [key: string]: unknown
+interface PermissionRequest {
+  toolName: string
+  input: any
+  requestId: string
 }
 
-export interface HookServerOptions {
-  onSessionHook: (sessionId: string, data: SessionHookData) => void
+interface PermissionResponse {
+  requestId: string
+  allowed: boolean
 }
 
-export interface HookServer {
-  port: number
-  stop: () => void
-}
+export class HookServer {
+  private server: any
+  private socket: Socket | null = null
+  private pendingRequests = new Map<string, (allowed: boolean) => void>()
+  private port: number
 
-/**
- * Start HTTP server to receive Claude session hooks
- */
-export async function startHookServer(options: HookServerOptions): Promise<HookServer> {
-  const { onSessionHook } = options
+  constructor(port: number = 3001) {
+    this.port = port
+    this.server = createServer(this.handleRequest.bind(this))
+  }
 
-  return new Promise((resolve, reject) => {
-    const server: Server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-      if (req.method === 'POST' && req.url === '/hook/session-start') {
-        const timeout = setTimeout(() => {
-          if (!res.headersSent) {
-            res.writeHead(408).end('timeout')
-          }
-        }, 5000)
+  setSocket(socket: Socket) {
+    this.socket = socket
 
-        try {
-          const chunks: Buffer[] = []
-          for await (const chunk of req) {
-            chunks.push(chunk as Buffer)
-          }
-          clearTimeout(timeout)
-
-          const body = Buffer.concat(chunks).toString('utf-8')
-          console.log('[hookServer] Received:', body)
-
-          let data: SessionHookData = {}
-          try {
-            data = JSON.parse(body)
-          } catch (parseError) {
-            console.error('[hookServer] Failed to parse JSON:', parseError)
-          }
-
-          const sessionId = data.session_id || data.sessionId
-          if (sessionId) {
-            console.log(`[hookServer] Session ID: ${sessionId}`)
-            onSessionHook(sessionId, data)
-          } else {
-            console.log('[hookServer] No session_id in data')
-          }
-
-          res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok')
-        } catch (error) {
-          clearTimeout(timeout)
-          console.error('[hookServer] Error:', error)
-          if (!res.headersSent) {
-            res.writeHead(500).end('error')
-          }
-        }
-        return
+    // Listen for permission responses from frontend
+    socket.on('permission_response', (data: PermissionResponse) => {
+      const resolver = this.pendingRequests.get(data.requestId)
+      if (resolver) {
+        resolver(data.allowed)
+        this.pendingRequests.delete(data.requestId)
       }
-
-      res.writeHead(404).end('not found')
     })
+  }
 
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      if (!address || typeof address === 'string') {
-        reject(new Error('Failed to get server address'))
-        return
-      }
+  private async handleRequest(req: IncomingMessage, res: ServerResponse) {
+    // CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
-      const port = address.port
-      console.log(`[hookServer] Listening on port ${port}`)
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200)
+      res.end()
+      return
+    }
 
-      resolve({
-        port,
-        stop: () => {
-          server.close()
-          console.log('[hookServer] Stopped')
+    if (req.method !== 'POST') {
+      res.writeHead(405)
+      res.end(JSON.stringify({ error: 'Method not allowed' }))
+      return
+    }
+
+    // Parse request body
+    let body = ''
+    req.on('data', chunk => body += chunk)
+    req.on('end', async () => {
+      try {
+        const data: PermissionRequest = JSON.parse(body)
+
+        if (!this.socket || !this.socket.connected) {
+          console.error('[Hook Server] No socket connection')
+          res.writeHead(403)
+          res.end(JSON.stringify({ allowed: false, error: 'Not connected' }))
+          return
         }
+
+        // Forward permission request to frontend via socket
+        this.socket.emit('permission_request', data)
+
+        // Wait for response with 30s timeout
+        const allowed = await new Promise<boolean>((resolve) => {
+          this.pendingRequests.set(data.requestId, resolve)
+
+          setTimeout(() => {
+            if (this.pendingRequests.has(data.requestId)) {
+              this.pendingRequests.delete(data.requestId)
+              resolve(false) // Deny on timeout
+            }
+          }, 30000)
+        })
+
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ allowed }))
+      } catch (err) {
+        console.error('[Hook Server] Error:', err)
+        res.writeHead(400)
+        res.end(JSON.stringify({ error: 'Invalid request' }))
+      }
+    })
+  }
+
+  start() {
+    return new Promise<void>((resolve) => {
+      this.server.listen(this.port, () => {
+        console.log(`[Hook Server] Listening on port ${this.port}`)
+        resolve()
       })
     })
+  }
 
-    server.on('error', (err) => {
-      console.error('[hookServer] Error:', err)
-      reject(err)
+  stop() {
+    return new Promise<void>((resolve) => {
+      this.server.close(() => {
+        console.log('[Hook Server] Stopped')
+        resolve()
+      })
     })
-  })
+  }
 }

@@ -19,7 +19,7 @@ export default function HomePage() {
   const [input, setInput] = useState('')
   const { messages, isLoading, addMessage } = useChatStore()
   const { character } = useBobaStore()
-  const { isConnected, isConnecting, error, connectClaude, disconnect, sendMessage } = useClaude()
+  const { isConnected, isConnecting, error, permissionRequest, connectClaude, disconnect, sendMessage, respondToPermission } = useClaude()
 
   useEffect(() => {
     setMounted(true)
@@ -168,6 +168,16 @@ export default function HomePage() {
           <SettingsModal onClose={() => setShowSettings(false)} />
         )}
 
+        {/* Permission Modal */}
+        {permissionRequest && (
+          <PermissionModal
+            toolName={permissionRequest.toolName}
+            input={permissionRequest.input}
+            onAllow={() => respondToPermission(true)}
+            onDeny={() => respondToPermission(false)}
+          />
+        )}
+
         {/* Chat Messages */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4 max-w-4xl mx-auto w-full">
           {!messages || messages.length === 0 ? (
@@ -305,6 +315,60 @@ export default function HomePage() {
               <Send size={20} color="#ffffff" />
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PermissionModal({ toolName, input, onAllow, onDeny }: {
+  toolName: string
+  input: any
+  onAllow: () => void
+  onDeny: () => void
+}) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="rounded-2xl p-6 max-w-md w-full" style={{ backgroundColor: '#ffffff' }}>
+        <h2 className="text-2xl font-bold mb-4" style={{ color: '#000000' }}>
+          Tool Permission
+        </h2>
+
+        <div className="mb-4">
+          <p className="text-sm font-medium mb-2" style={{ color: '#666666' }}>
+            Claude wants to use:
+          </p>
+          <div className="p-3 rounded-lg" style={{ backgroundColor: '#f5f5f5' }}>
+            <span className="font-mono font-bold" style={{ color: '#000000' }}>
+              {toolName}
+            </span>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <p className="text-sm font-medium mb-2" style={{ color: '#666666' }}>
+            Input:
+          </p>
+          <pre className="p-3 rounded-lg overflow-x-auto text-xs" style={{ backgroundColor: '#f5f5f5', color: '#000000' }}>
+            {JSON.stringify(input, null, 2)}
+          </pre>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onDeny}
+            className="flex-1 py-3 rounded-xl font-medium"
+            style={{ backgroundColor: '#ef4444', color: '#ffffff' }}
+          >
+            Deny
+          </button>
+          <button
+            onClick={onAllow}
+            className="flex-1 py-3 rounded-xl font-medium"
+            style={{ backgroundColor: '#10b981', color: '#ffffff' }}
+          >
+            Allow
+          </button>
         </div>
       </div>
     </div>
