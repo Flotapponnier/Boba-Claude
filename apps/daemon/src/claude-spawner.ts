@@ -15,7 +15,31 @@ export interface ClaudeSpawnerOptions {
  * Spawn Claude CLI with hooks configuration
  */
 export function spawnClaude(options: ClaudeSpawnerOptions): ChildProcess {
-  const { cwd = process.cwd(), onOutput, onExit } = options
+  const { hookPort, cwd = process.cwd(), onOutput, onExit } = options
+
+  // Create .claude directory and settings.json with hooks config
+  const claudeDir = join(cwd, '.claude')
+  mkdirSync(claudeDir, { recursive: true })
+
+  const settingsConfig = {
+    "hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "*",
+          "hooks": [
+            {
+              "type": "command",
+              "command": `response=$(curl -s -X POST http://localhost:${hookPort}/permission -H 'Content-Type: application/json' -d @-) && echo "$response" && echo "$response" | grep -q '"permissionDecision":"allow"'`
+            }
+          ]
+        }
+      ]
+    }
+  }
+
+  const settingsPath = join(claudeDir, 'settings.json')
+  writeFileSync(settingsPath, JSON.stringify(settingsConfig, null, 2))
+  console.log(`[ClaudeSpawner] Created hooks config at ${settingsPath}`)
 
   // Spawn Claude in SDK mode (continuous conversation via JSON)
   const args = [

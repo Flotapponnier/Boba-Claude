@@ -1,22 +1,34 @@
 #!/usr/bin/env node
-import { io, Socket } from 'socket.io-client'
+import { Server } from 'socket.io'
+import { createServer } from 'node:http'
 import { spawnClaude } from './claude-spawner.js'
 import { ChildProcess } from 'node:child_process'
-import { createInterface } from 'node:readline'
 import { HookServer } from './hook-server.js'
 
-const SERVER_URL = process.env.BOBA_SERVER_URL || 'http://localhost:4000'
-const LOCAL_TOKEN = 'local-session'
-const HOOK_PORT = 3001
+const WS_PORT = 3001
+const HOOK_PORT = 3002
 
-let socket: Socket | null = null
 let claudeProcess: ChildProcess | null = null
 let currentSessionId: string | null = null
 let hookServer: HookServer | null = null
+let frontendSocket: any = null
+let pendingTools = new Map<string, { resolve: (allowed: boolean) => void; toolUse: any }>()
 
 async function main() {
   console.log('[Boba Daemon] Starting...')
-  console.log(`[Boba Daemon] Server: ${SERVER_URL}`)
+
+  // Create HTTP server for Socket.IO
+  const httpServer = createServer()
+
+  // Create Socket.IO server
+  const io = new Server(httpServer, {
+    cors: {
+      origin: 'http://localhost:3000',
+      methods: ['GET', 'POST'],
+      credentials: true,
+    },
+    transports: ['websocket', 'polling'],
+  })
 
   // Start hook server for tool permissions
   hookServer = new HookServer(HOOK_PORT)
@@ -25,7 +37,8 @@ async function main() {
   // Spawn Claude in SDK mode
   console.log('[Boba Daemon] Spawning Claude CLI...')
   claudeProcess = spawnClaude({
-    onOutput: (data) => {
+    hookPort: HOOK_PORT,
+    onOutput: async (data) => {
       // Parse JSON lines from Claude
       const lines = data.split('\n').filter(line => line.trim())
       for (const line of lines) {
@@ -37,17 +50,52 @@ async function main() {
             if (!currentSessionId) {
               currentSessionId = message.session_id
               console.log(`[Boba Daemon] Got session ID: ${currentSessionId}`)
-              connectToServer(currentSessionId)
             }
           }
 
-          // Forward all messages to server
-          if (socket && socket.connected && currentSessionId) {
-            socket.emit('claude_output', {
-              type: 'claude_output',
-              sessionId: currentSessionId,
-              data: line,
-            })
+          // Forward messages to frontend
+          if (frontendSocket && currentSessionId) {
+            if (message.type === 'assistant') {
+              // Handle assistant message type - extract text and tool uses
+              const messageObj = message.message
+              if (messageObj && Array.isArray(messageObj.content)) {
+                // Extract text
+                const text = messageObj.content
+                  .filter((c: any) => c.type === 'text')
+                  .map((c: any) => c.text)
+                  .join('')
+
+                // Extract tool uses
+                const toolUses = messageObj.content
+                  .filter((c: any) => c.type === 'tool_use')
+
+                // Send text if present
+                if (text) {
+                  frontendSocket.emit('claude_message', {
+                    message: {
+                      type: 'text',
+                      text,
+                      role: 'assistant',
+                    },
+                  })
+                }
+
+                // Send tool uses (permissions already handled by hooks)
+                for (const toolUse of toolUses) {
+                  console.log(`[Boba Daemon] Tool executed: ${toolUse.name}`)
+                  frontendSocket.emit('claude_message', {
+                    tool: {
+                      type: 'tool_use',
+                      id: toolUse.id,
+                      name: toolUse.name,
+                      input: toolUse.input,
+                    },
+                  })
+                }
+              }
+            } else if (message.type === 'system' || message.type === 'result') {
+              // Ignore system and result messages
+            }
           }
         } catch (e) {
           // Not JSON, log it
@@ -61,38 +109,28 @@ async function main() {
     },
   })
 
-  function connectToServer(sessionId: string) {
-    console.log(`[Boba Daemon] Connecting to server with session ID: ${sessionId}`)
-    socket = io(SERVER_URL, {
-      auth: {
-        token: LOCAL_TOKEN,
-        sessionId: sessionId,
-        clientType: 'daemon',
-      },
-      transports: ['websocket', 'polling'],
-    })
+  // Handle frontend connections
+  io.on('connection', (socket) => {
+    console.log('[Boba Daemon] Frontend connected')
+    frontendSocket = socket
 
-    socket.on('connect', () => {
-      console.log(`[Boba Daemon] Connected with session ${sessionId}`)
-      // Connect hook server to socket for permission forwarding
-      if (hookServer) {
-        hookServer.setSocket(socket)
-      }
-    })
+    // Connect hook server to frontend socket for permissions
+    if (hookServer) {
+      hookServer.setSocket(socket)
+    }
 
-    socket.on('disconnect', () => {
-      console.log('[Boba Daemon] Disconnected from Boba server')
-    })
+    // Send ready with session ID
+    if (currentSessionId) {
+      socket.emit('ready', {
+        type: 'ready',
+        sessionId: currentSessionId,
+      })
+    }
 
-    socket.on('error', (error) => {
-      console.error('[Boba Daemon] Socket error:', error)
-    })
-
-    // Receive messages from server to send to Claude (SDK JSON format)
-    socket.on('user_message', (data: any) => {
+    // Handle messages from frontend
+    socket.on('message', (data: any) => {
       console.log('[Boba Daemon] Received user message:', data.content)
       if (claudeProcess && claudeProcess.stdin) {
-        // Send as JSON line (Claude SDK format)
         const message = JSON.stringify({
           type: 'user',
           message: {
@@ -103,9 +141,29 @@ async function main() {
         claudeProcess.stdin.write(message + '\n')
       }
     })
-  }
 
-  console.log('[Boba Daemon] Waiting for Claude to start...')
+    // Handle permission responses from frontend
+    socket.on('permission_response', (data: any) => {
+      console.log('[Boba Daemon] Permission response:', data)
+      const pending = pendingTools.get(data.requestId)
+      if (pending) {
+        pending.resolve(data.allowed)
+        pendingTools.delete(data.requestId)
+      }
+    })
+
+    socket.on('disconnect', () => {
+      console.log('[Boba Daemon] Frontend disconnected')
+      frontendSocket = null
+    })
+  })
+
+  // Start HTTP server
+  httpServer.listen(WS_PORT, () => {
+    console.log(`[Boba Daemon] WebSocket server listening on port ${WS_PORT}`)
+    console.log('[Boba Daemon] Ready! Claude is running.')
+    console.log('[Boba Daemon] Press Ctrl+C to stop.')
+  })
 
   // Cleanup on exit
   process.on('SIGINT', async () => {
@@ -113,17 +171,11 @@ async function main() {
     if (claudeProcess) {
       claudeProcess.kill('SIGTERM')
     }
-    if (socket) {
-      socket.disconnect()
-    }
     if (hookServer) {
       await hookServer.stop()
     }
     process.exit(0)
   })
-
-  console.log('[Boba Daemon] Ready! Claude is running.')
-  console.log('[Boba Daemon] Press Ctrl+C to stop.')
 }
 
 main().catch((error) => {

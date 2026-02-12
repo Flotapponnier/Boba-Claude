@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "response=$(curl -s -X POST http://localhost:3002/permission -H 'Content-Type: application/json' -d @-) && echo \"$response\" && echo \"$response\" | grep -q '\"permissionDecision\":\"allow\"'"
+          }
+        ]
+      }
+    ]
+  }
+}

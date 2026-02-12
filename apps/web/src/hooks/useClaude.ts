@@ -4,10 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { useChatStore } from '@/lib/store'
 import { io, Socket } from 'socket.io-client'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'
-
-// Local-only mode - no user authentication needed
-const LOCAL_TOKEN = 'local-session'
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001'
 
 interface ClaudeMessage {
   type: 'ready' | 'claude_message' | 'thinking' | 'session_update' | 'error' | 'output'
@@ -24,60 +21,18 @@ export function useClaude() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [permissionRequest, setPermissionRequest] = useState<any>(null)
+  const permissionQueueRef = useRef<any[]>([])
 
   const socketRef = useRef<Socket | null>(null)
   const { addMessage, setLoading } = useChatStore()
 
-  // Connect to daemon (no OAuth needed in local mode)
+  // Connect to daemon directly via WebSocket
   const connectClaude = async () => {
-    try {
-      setError(null)
-      // Directly try to connect to daemon
-      await createSession()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to connect')
-      console.error('Connect error:', err)
-    }
-  }
-
-  // Connect to daemon session (daemon-only mode)
-  const createSession = async () => {
     try {
       setIsConnecting(true)
       setError(null)
 
-      // Get daemon session
-      const daemonResponse = await fetch(`${API_URL}/chat/daemon-session`, {
-        headers: {
-          Authorization: `Bearer ${LOCAL_TOKEN}`,
-        },
-      })
-
-      if (!daemonResponse.ok) {
-        throw new Error('No daemon connected. Please start boba-daemon locally.')
-      }
-
-      const data = await daemonResponse.json()
-      console.log('Found daemon session:', data.sessionId)
-      setSessionId(data.sessionId)
-
-      // Connect Socket.IO
-      connectSocket(data.sessionId)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to connect to daemon')
-      setIsConnecting(false)
-      console.error('Session creation error:', err)
-    }
-  }
-
-  // Connect to Socket.IO
-  const connectSocket = (sessionId: string) => {
-    try {
-      const socket = io(API_URL, {
-        auth: {
-          token: LOCAL_TOKEN,
-          sessionId,
-        },
+      const socket = io(WS_URL, {
         transports: ['websocket', 'polling'],
       })
 
@@ -90,6 +45,7 @@ export function useClaude() {
 
       socket.on('ready', (data) => {
         console.log('Session ready:', data)
+        setSessionId(data.sessionId)
       })
 
       socket.on('claude_message', (data) => {
@@ -107,7 +63,11 @@ export function useClaude() {
 
       socket.on('permission_request', (data) => {
         console.log('[Frontend] Permission request:', data)
-        setPermissionRequest(data)
+        permissionQueueRef.current.push(data)
+        // Show first in queue if no modal is currently open
+        if (!permissionRequest) {
+          setPermissionRequest(data)
+        }
       })
 
       socket.on('error', (data) => {
@@ -210,7 +170,14 @@ export function useClaude() {
       allowed,
     })
 
-    setPermissionRequest(null)
+    // Remove current from queue
+    permissionQueueRef.current = permissionQueueRef.current.filter(
+      (req) => req.requestId !== permissionRequest.requestId
+    )
+
+    // Show next in queue, or null if queue is empty
+    const nextRequest = permissionQueueRef.current[0] || null
+    setPermissionRequest(nextRequest)
   }, [permissionRequest])
 
   // Disconnect
@@ -220,22 +187,9 @@ export function useClaude() {
       socketRef.current = null
     }
 
-    if (sessionId) {
-      try {
-        await fetch(`${API_URL}/chat/session/${sessionId}`, {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Bearer ${LOCAL_TOKEN}`,
-          },
-        })
-      } catch (err) {
-        console.error('Failed to stop session:', err)
-      }
-    }
-
     setIsConnected(false)
     setSessionId(null)
-  }, [sessionId])
+  }, [])
 
   // Cleanup on unmount
   useEffect(() => {

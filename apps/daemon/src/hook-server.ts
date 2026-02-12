@@ -59,7 +59,8 @@ export class HookServer {
     req.on('data', chunk => body += chunk)
     req.on('end', async () => {
       try {
-        const data: PermissionRequest = JSON.parse(body)
+        const hookData = JSON.parse(body)
+        console.log('[Hook Server] Received hook:', JSON.stringify(hookData, null, 2))
 
         if (!this.socket || !this.socket.connected) {
           console.error('[Hook Server] No socket connection')
@@ -68,23 +69,43 @@ export class HookServer {
           return
         }
 
+        // Generate requestId for tracking
+        const requestId = `${hookData.tool_name || 'unknown'}-${Date.now()}`
+
+        // Format request for frontend
+        const permissionRequest = {
+          requestId,
+          toolName: hookData.tool_name,
+          input: hookData.tool_input,
+        }
+
         // Forward permission request to frontend via socket
-        this.socket.emit('permission_request', data)
+        this.socket.emit('permission_request', permissionRequest)
+        console.log('[Hook Server] Sent permission request:', permissionRequest)
 
         // Wait for response with 30s timeout
         const allowed = await new Promise<boolean>((resolve) => {
-          this.pendingRequests.set(data.requestId, resolve)
+          this.pendingRequests.set(requestId, resolve)
 
           setTimeout(() => {
-            if (this.pendingRequests.has(data.requestId)) {
-              this.pendingRequests.delete(data.requestId)
+            if (this.pendingRequests.has(requestId)) {
+              this.pendingRequests.delete(requestId)
+              console.log('[Hook Server] Permission timeout, denying')
               resolve(false) // Deny on timeout
             }
           }, 30000)
         })
 
+        console.log('[Hook Server] Permission result:', allowed ? 'ALLOWED' : 'DENIED')
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ allowed }))
+        const hookResponse = {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: allowed ? 'allow' : 'deny',
+            permissionDecisionReason: allowed ? 'User approved' : 'User denied'
+          }
+        }
+        res.end(JSON.stringify(hookResponse))
       } catch (err) {
         console.error('[Hook Server] Error:', err)
         res.writeHead(400)
