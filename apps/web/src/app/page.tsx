@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useChatStore, useBobaStore } from '@/lib/store'
 import { useClaude } from '@/hooks/useClaude'
 import Image from 'next/image'
-import { Settings, Send, MessageSquare, Clock, Plug, PlugZap } from 'lucide-react'
+import { Settings, Send, MessageSquare, Clock, Plug, PlugZap, Wrench } from 'lucide-react'
 
 const CHARACTER_IMAGES = {
   black: '/assets/branding/black_boba.png',
@@ -189,7 +189,7 @@ export default function HomePage() {
             messages.map((message) => (
               <div
                 key={message.id}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`flex ${message.role === 'user' ? 'justify-end' : message.role === 'tool' ? 'justify-center' : 'justify-start'}`}
               >
                 {message.role === 'assistant' && (
                   <div className="relative w-12 h-12 mr-2 flex-shrink-0">
@@ -202,19 +202,40 @@ export default function HomePage() {
                     />
                   </div>
                 )}
-                <div
-                  className={`max-w-[70%] p-3 rounded-2xl ${
-                    message.role === 'user'
-                      ? 'rounded-br-none'
-                      : 'rounded-bl-none'
-                  }`}
-                  style={{
-                    backgroundColor: message.role === 'user' ? 'var(--accent)' : 'var(--bg-secondary)',
-                    color: message.role === 'user' ? '#ffffff' : 'var(--text-primary)',
-                  }}
-                >
-                  {message.content}
-                </div>
+                {message.role === 'tool' ? (
+                  // Tool execution display
+                  <div
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs opacity-70"
+                    style={{
+                      backgroundColor: 'var(--bg-secondary)',
+                      color: 'var(--text-secondary)',
+                      border: '1px dashed var(--accent)',
+                    }}
+                  >
+                    <Wrench size={14} style={{ color: 'var(--accent)' }} />
+                    <span className="font-medium" style={{ color: 'var(--accent)' }}>
+                      {message.toolName}
+                    </span>
+                    <span>•</span>
+                    <pre className="text-xs overflow-x-auto max-w-md" style={{ margin: 0 }}>
+                      {message.content}
+                    </pre>
+                  </div>
+                ) : (
+                  <div
+                    className={`max-w-[70%] p-3 rounded-2xl ${
+                      message.role === 'user'
+                        ? 'rounded-br-none'
+                        : 'rounded-bl-none'
+                    }`}
+                    style={{
+                      backgroundColor: message.role === 'user' ? 'var(--accent)' : 'var(--bg-secondary)',
+                      color: message.role === 'user' ? '#ffffff' : 'var(--text-primary)',
+                    }}
+                  >
+                    {message.content}
+                  </div>
+                )}
               </div>
             ))
           )}

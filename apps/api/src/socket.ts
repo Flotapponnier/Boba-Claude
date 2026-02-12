@@ -132,25 +132,43 @@ export function startSocket(app: FastifyInstance) {
               },
             })
           } else if (claudeMessage.type === 'assistant') {
-            // Handle assistant message type - extract text from content array
+            // Handle assistant message type - extract text and tool uses
             const messageObj = claudeMessage.message
-            let text = ''
             if (messageObj && Array.isArray(messageObj.content)) {
-              text = messageObj.content
+              // Extract text
+              const text = messageObj.content
                 .filter((c: any) => c.type === 'text')
                 .map((c: any) => c.text)
                 .join('')
-            }
 
-            if (text) {
-              console.log('[Daemon] Sending assistant message to frontend:', text)
-              frontendSocket.emit('claude_message', {
-                message: {
-                  type: 'text',
-                  text,
-                  role: 'assistant',
-                },
-              })
+              // Extract tool uses
+              const toolUses = messageObj.content
+                .filter((c: any) => c.type === 'tool_use')
+
+              // Send text if present
+              if (text) {
+                console.log('[Daemon] Sending assistant message to frontend:', text)
+                frontendSocket.emit('claude_message', {
+                  message: {
+                    type: 'text',
+                    text,
+                    role: 'assistant',
+                  },
+                })
+              }
+
+              // Send tool uses
+              for (const toolUse of toolUses) {
+                console.log('[Daemon] Tool use:', toolUse.name, toolUse.id)
+                frontendSocket.emit('claude_message', {
+                  tool: {
+                    type: 'tool_use',
+                    id: toolUse.id,
+                    name: toolUse.name,
+                    input: toolUse.input,
+                  },
+                })
+              }
             }
           } else if (claudeMessage.type === 'system' || claudeMessage.type === 'result') {
             // Ignore system and result messages

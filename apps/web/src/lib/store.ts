@@ -25,9 +25,11 @@ export const useBobaStore = create<BobaStore>()(
 
 interface Message {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'tool'
   content: string
   timestamp: Date
+  toolName?: string
+  toolId?: string
 }
 
 interface ChatStore {

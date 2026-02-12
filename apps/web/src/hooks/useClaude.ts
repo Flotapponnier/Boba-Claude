@@ -92,6 +92,7 @@ export function useClaude() {
       })
 
       socket.on('claude_message', (data) => {
+        console.log('[Frontend] Received claude_message:', data)
         handleClaudeMessage({ type: 'claude_message', ...data })
       })
 
@@ -132,11 +133,24 @@ export function useClaude() {
 
       case 'claude_message':
         if (message.message?.type === 'text') {
+          console.log('[Frontend] Adding text message:', message.message.text)
           addMessage({
             role: 'assistant',
             content: message.message.text || message.content || '',
           })
           setLoading(false)
+        } else if (message.tool) {
+          // Handle tool execution
+          console.log('[Frontend] Adding tool message:', message.tool.name)
+          const toolInput = JSON.stringify(message.tool.input, null, 2)
+          addMessage({
+            role: 'tool',
+            content: toolInput,
+            toolName: message.tool.name,
+            toolId: message.tool.id,
+          })
+        } else {
+          console.log('[Frontend] Unknown message format:', message)
         }
         break
 
