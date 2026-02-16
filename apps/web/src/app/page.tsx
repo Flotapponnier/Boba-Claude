@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useChatStore, useBobaStore } from '@/lib/store'
 import { useClaude } from '@/hooks/useClaude'
 import Image from 'next/image'
-import { Settings, Send, MessageSquare, Clock, Plug, PlugZap, Wrench, Trash2 } from 'lucide-react'
+import { Settings, Send, MessageSquare, Clock, Plug, PlugZap, Wrench, Trash2, Pencil } from 'lucide-react'
 
 const CHARACTER_IMAGES = {
   black: '/assets/branding/black_boba.png',
@@ -17,7 +17,8 @@ export default function HomePage() {
   const [mounted, setMounted] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [input, setInput] = useState('')
-  const initializedRef = useRef(false)
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState('')
   const {
     sessions: sessionsObj,
     currentSessionId,
@@ -26,6 +27,7 @@ export default function HomePage() {
     createSession,
     switchSession,
     deleteSession,
+    renameSession,
   } = useChatStore()
   const { character } = useBobaStore()
   const { isConnected, isConnecting, error, permissionRequest, connectClaude, disconnect, sendMessage, respondToPermission, requestNewSession } = useClaude()
@@ -38,12 +40,6 @@ export default function HomePage() {
 
   useEffect(() => {
     setMounted(true)
-    // Create initial session only once, only if no sessions exist at all
-    if (!initializedRef.current && !currentSessionId && Object.keys(sessionsObj).length === 0) {
-      initializedRef.current = true
-      createSession()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleNewChat = () => {
@@ -57,12 +53,25 @@ export default function HomePage() {
   const handleSendMessage = async () => {
     if (!input.trim() || !isConnected) return
 
+    // Create session if none exists
+    if (!currentSessionId) {
+      createSession()
+    }
+
     // Add user message to UI
     addMessage({ role: 'user', content: input })
 
     // Send via WebSocket
     sendMessage(input)
     setInput('')
+  }
+
+  const handleRenameSession = (sessionId: string) => {
+    if (editingTitle.trim()) {
+      renameSession(sessionId, editingTitle.trim())
+    }
+    setEditingSessionId(null)
+    setEditingTitle('')
   }
 
   if (!mounted) {
@@ -176,18 +185,49 @@ export default function HomePage() {
                 >
                   <button
                     onClick={() => switchSession(session.id)}
-                    className="flex-1 flex items-center gap-2 text-left"
+                    className="flex-1 flex items-center gap-2 text-left min-w-0"
                     style={{ color: character === 'black' ? '#666666' : 'var(--text-secondary)' }}
                   >
-                    <Clock size={16} />
-                    <span className="text-sm truncate">{session.title}</span>
+                    <Clock size={16} className="flex-shrink-0" />
+                    {editingSessionId === session.id ? (
+                      <input
+                        type="text"
+                        value={editingTitle}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        onKeyPress={(e) => {
+                          e.stopPropagation()
+                          if (e.key === 'Enter') handleRenameSession(session.id)
+                        }}
+                        onBlur={() => handleRenameSession(session.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-sm px-1 rounded flex-1 min-w-0 outline-none"
+                        style={{
+                          backgroundColor: 'var(--bg-secondary)',
+                          color: 'var(--text-primary)',
+                        }}
+                        autoFocus
+                      />
+                    ) : (
+                      <span className="text-sm truncate">{session.title}</span>
+                    )}
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setEditingSessionId(session.id)
+                      setEditingTitle(session.title)
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-blue-500 hover:bg-opacity-20 transition-opacity flex-shrink-0"
+                    style={{ color: '#3b82f6' }}
+                  >
+                    <Pencil size={14} />
                   </button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
                       deleteSession(session.id)
                     }}
-                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500 hover:bg-opacity-20 transition-opacity"
+                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500 hover:bg-opacity-20 transition-opacity flex-shrink-0"
                     style={{ color: '#ef4444' }}
                   >
                     <Trash2 size={14} />

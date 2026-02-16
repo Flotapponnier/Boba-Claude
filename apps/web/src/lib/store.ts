@@ -50,6 +50,7 @@ interface ChatStore {
   createSession: () => string
   switchSession: (sessionId: string) => void
   deleteSession: (sessionId: string) => void
+  renameSession: (sessionId: string, title: string) => void
 
   // Connection state
   setWasConnected: (connected: boolean) => void
@@ -101,6 +102,24 @@ export const useChatStore = create<ChatStore>()(
           }
 
           return { sessions: remainingSessions, currentSessionId: newCurrentId }
+        })
+      },
+
+      renameSession: (sessionId: string, title: string) => {
+        set((state) => {
+          const session = state.sessions[sessionId]
+          if (!session) return state
+
+          return {
+            sessions: {
+              ...state.sessions,
+              [sessionId]: {
+                ...session,
+                title,
+                updatedAt: new Date(),
+              },
+            },
+          }
         })
       },
 
