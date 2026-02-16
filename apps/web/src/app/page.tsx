@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useChatStore, useBobaStore } from '@/lib/store'
 import { useClaude } from '@/hooks/useClaude'
 import Image from 'next/image'
@@ -17,6 +17,7 @@ export default function HomePage() {
   const [mounted, setMounted] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [input, setInput] = useState('')
+  const initializedRef = useRef(false)
   const {
     sessions: sessionsObj,
     currentSessionId,
@@ -36,8 +37,9 @@ export default function HomePage() {
 
   useEffect(() => {
     setMounted(true)
-    // Create initial session only if no sessions exist at all
-    if (!currentSessionId && Object.keys(sessionsObj).length === 0) {
+    // Create initial session only once, only if no sessions exist at all
+    if (!initializedRef.current && !currentSessionId && Object.keys(sessionsObj).length === 0) {
+      initializedRef.current = true
       createSession()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
