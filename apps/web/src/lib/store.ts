@@ -152,48 +152,63 @@ export const useChatStore = create<ChatStore>()(
     }),
     {
       name: 'chat-storage',
-      serialize: (state) => {
-        return JSON.stringify({
-          state: {
-            ...state.state,
-            sessions: Object.fromEntries(
-              Object.entries(state.state.sessions).map(([id, session]) => [
-                id,
-                {
-                  ...session,
-                  createdAt: (session as ChatSession).createdAt.toISOString(),
-                  updatedAt: (session as ChatSession).updatedAt.toISOString(),
-                  messages: (session as ChatSession).messages.map((msg) => ({
-                    ...msg,
-                    timestamp: msg.timestamp.toISOString(),
-                  })),
-                },
-              ])
-            ),
-          },
-        })
-      },
-      deserialize: (str) => {
-        const { state } = JSON.parse(str)
-        return {
-          state: {
-            ...state,
-            sessions: Object.fromEntries(
-              Object.entries(state.sessions || {}).map(([id, session]: [string, any]) => [
-                id,
-                {
-                  ...session,
-                  createdAt: new Date(session.createdAt),
-                  updatedAt: new Date(session.updatedAt),
-                  messages: session.messages.map((msg: any) => ({
-                    ...msg,
-                    timestamp: new Date(msg.timestamp),
-                  })),
-                },
-              ])
-            ),
-          },
-        }
+      storage: {
+        getItem: (name) => {
+          const str = localStorage.getItem(name)
+          if (!str) return null
+          try {
+            const parsed = JSON.parse(str)
+            const state = parsed.state || parsed
+            return {
+              state: {
+                ...state,
+                sessions: Object.fromEntries(
+                  Object.entries(state.sessions || {}).map(([id, session]: [string, any]) => [
+                    id,
+                    {
+                      ...session,
+                      createdAt: new Date(session.createdAt),
+                      updatedAt: new Date(session.updatedAt),
+                      messages: (session.messages || []).map((msg: any) => ({
+                        ...msg,
+                        timestamp: new Date(msg.timestamp),
+                      })),
+                    },
+                  ])
+                ),
+              },
+            }
+          } catch (e) {
+            console.error('Error parsing chat storage:', e)
+            return null
+          }
+        },
+        setItem: (name, value) => {
+          const state = value.state || value
+          localStorage.setItem(
+            name,
+            JSON.stringify({
+              state: {
+                ...state,
+                sessions: Object.fromEntries(
+                  Object.entries(state.sessions || {}).map(([id, session]: [string, any]) => [
+                    id,
+                    {
+                      ...session,
+                      createdAt: session.createdAt?.toISOString?.() || session.createdAt,
+                      updatedAt: session.updatedAt?.toISOString?.() || session.updatedAt,
+                      messages: (session.messages || []).map((msg: any) => ({
+                        ...msg,
+                        timestamp: msg.timestamp?.toISOString?.() || msg.timestamp,
+                      })),
+                    },
+                  ])
+                ),
+              },
+            })
+          )
+        },
+        removeItem: (name) => localStorage.removeItem(name),
       },
     }
   )
