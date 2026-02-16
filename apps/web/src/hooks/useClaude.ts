@@ -29,13 +29,15 @@ export function useClaude() {
   const { addMessage, setLoading, wasConnected, setWasConnected } = useChatStore()
 
   // Connect to daemon directly via WebSocket
-  const connectClaude = async () => {
+  const connectClaude = useCallback(async () => {
     try {
       setIsConnecting(true)
       setError(null)
 
       const socket = io(WS_URL, {
         transports: ['websocket', 'polling'],
+        timeout: 5000,
+        reconnection: false,
       })
 
       socket.on('connect', () => {
@@ -44,6 +46,13 @@ export function useClaude() {
         setIsConnecting(false)
         setError(null)
         setWasConnected(true)
+      })
+
+      socket.on('connect_error', (err) => {
+        console.error('Socket connection error:', err)
+        setError('Failed to connect to daemon')
+        setIsConnecting(false)
+        setIsConnected(false)
       })
 
       socket.on('ready', (data) => {
@@ -91,12 +100,21 @@ export function useClaude() {
       })
 
       socketRef.current = socket
+
+      // Timeout fallback
+      setTimeout(() => {
+        if (!socket.connected) {
+          console.error('Connection timeout')
+          setError('Connection timeout')
+          setIsConnecting(false)
+        }
+      }, 5000)
     } catch (err) {
       console.error('Socket connection error:', err)
       setError('Failed to connect socket')
       setIsConnecting(false)
     }
-  }
+  }, [setWasConnected, setLoading, permissionRequest])
 
   // Handle messages from Claude
   const handleClaudeMessage = (message: ClaudeMessage) => {
