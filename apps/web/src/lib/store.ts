@@ -41,7 +41,7 @@ interface ChatSession {
 }
 
 interface ChatStore {
-  sessions: Map<string, ChatSession>
+  sessions: Record<string, ChatSession>
   currentSessionId: string | null
   isLoading: boolean
 
@@ -49,8 +49,6 @@ interface ChatStore {
   createSession: () => string
   switchSession: (sessionId: string) => void
   deleteSession: (sessionId: string) => void
-  getSessions: () => ChatSession[]
-  getCurrentSession: () => ChatSession | null
 
   // Message management
   addMessage: (message: Omit<Message, 'id' | 'timestamp'>) => void
@@ -61,7 +59,7 @@ interface ChatStore {
 export const useChatStore = create<ChatStore>()(
   persist(
     (set, get) => ({
-      sessions: new Map(),
+      sessions: {},
       currentSessionId: null,
       isLoading: false,
 
@@ -75,11 +73,10 @@ export const useChatStore = create<ChatStore>()(
           updatedAt: new Date(),
         }
 
-        set((state) => {
-          const sessions = new Map(state.sessions)
-          sessions.set(id, newSession)
-          return { sessions, currentSessionId: id }
-        })
+        set((state) => ({
+          sessions: { ...state.sessions, [id]: newSession },
+          currentSessionId: id,
+        }))
 
         return id
       },
@@ -90,29 +87,16 @@ export const useChatStore = create<ChatStore>()(
 
       deleteSession: (sessionId: string) => {
         set((state) => {
-          const sessions = new Map(state.sessions)
-          sessions.delete(sessionId)
+          const { [sessionId]: deleted, ...remainingSessions } = state.sessions
 
           let newCurrentId = state.currentSessionId
           if (state.currentSessionId === sessionId) {
-            const remainingSessions = Array.from(sessions.keys())
-            newCurrentId = remainingSessions.length > 0 ? remainingSessions[0] : null
+            const remainingIds = Object.keys(remainingSessions)
+            newCurrentId = remainingIds.length > 0 ? remainingIds[0] : null
           }
 
-          return { sessions, currentSessionId: newCurrentId }
+          return { sessions: remainingSessions, currentSessionId: newCurrentId }
         })
-      },
-
-      getSessions: () => {
-        return Array.from(get().sessions.values()).sort(
-          (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()
-        )
-      },
-
-      getCurrentSession: () => {
-        const { currentSessionId, sessions } = get()
-        if (!currentSessionId) return null
-        return sessions.get(currentSessionId) || null
       },
 
       addMessage: (message) => {
@@ -120,7 +104,7 @@ export const useChatStore = create<ChatStore>()(
           const { currentSessionId, sessions } = state
           if (!currentSessionId) return state
 
-          const session = sessions.get(currentSessionId)
+          const session = sessions[currentSessionId]
           if (!session) return state
 
           const newMessage: Message = {
@@ -138,10 +122,9 @@ export const useChatStore = create<ChatStore>()(
               : session.title,
           }
 
-          const newSessions = new Map(sessions)
-          newSessions.set(currentSessionId, updatedSession)
-
-          return { sessions: newSessions }
+          return {
+            sessions: { ...sessions, [currentSessionId]: updatedSession },
+          }
         })
       },
 
@@ -152,7 +135,7 @@ export const useChatStore = create<ChatStore>()(
           const { currentSessionId, sessions } = state
           if (!currentSessionId) return state
 
-          const session = sessions.get(currentSessionId)
+          const session = sessions[currentSessionId]
           if (!session) return state
 
           const updatedSession: ChatSession = {
@@ -161,53 +144,56 @@ export const useChatStore = create<ChatStore>()(
             updatedAt: new Date(),
           }
 
-          const newSessions = new Map(sessions)
-          newSessions.set(currentSessionId, updatedSession)
-
-          return { sessions: newSessions }
+          return {
+            sessions: { ...sessions, [currentSessionId]: updatedSession },
+          }
         })
       },
     }),
     {
       name: 'chat-storage',
-      storage: {
-        getItem: (name) => {
-          const str = localStorage.getItem(name)
-          if (!str) return null
-          const { state } = JSON.parse(str)
-          return {
-            state: {
-              ...state,
-              sessions: new Map(
-                Object.entries(state.sessions || {}).map(([id, session]: [string, any]) => [
-                  id,
-                  {
-                    ...session,
-                    createdAt: new Date(session.createdAt),
-                    updatedAt: new Date(session.updatedAt),
-                    messages: session.messages.map((msg: any) => ({
-                      ...msg,
-                      timestamp: new Date(msg.timestamp),
-                    })),
-                  },
-                ])
-              ),
-            },
-          }
-        },
-        setItem: (name, value) => {
-          const { state } = value
-          localStorage.setItem(
-            name,
-            JSON.stringify({
-              state: {
-                ...state,
-                sessions: Object.fromEntries(state.sessions),
-              },
-            })
-          )
-        },
-        removeItem: (name) => localStorage.removeItem(name),
+      serialize: (state) => {
+        return JSON.stringify({
+          state: {
+            ...state.state,
+            sessions: Object.fromEntries(
+              Object.entries(state.state.sessions).map(([id, session]) => [
+                id,
+                {
+                  ...session,
+                  createdAt: (session as ChatSession).createdAt.toISOString(),
+                  updatedAt: (session as ChatSession).updatedAt.toISOString(),
+                  messages: (session as ChatSession).messages.map((msg) => ({
+                    ...msg,
+                    timestamp: msg.timestamp.toISOString(),
+                  })),
+                },
+              ])
+            ),
+          },
+        })
+      },
+      deserialize: (str) => {
+        const { state } = JSON.parse(str)
+        return {
+          state: {
+            ...state,
+            sessions: Object.fromEntries(
+              Object.entries(state.sessions || {}).map(([id, session]: [string, any]) => [
+                id,
+                {
+                  ...session,
+                  createdAt: new Date(session.createdAt),
+                  updatedAt: new Date(session.updatedAt),
+                  messages: session.messages.map((msg: any) => ({
+                    ...msg,
+                    timestamp: new Date(msg.timestamp),
+                  })),
+                },
+              ])
+            ),
+          },
+        }
       },
     }
   )

@@ -18,20 +18,21 @@ export default function HomePage() {
   const [showSettings, setShowSettings] = useState(false)
   const [input, setInput] = useState('')
   const {
+    sessions: sessionsObj,
     currentSessionId,
     isLoading,
     addMessage,
     createSession,
     switchSession,
-    getSessions,
-    getCurrentSession
   } = useChatStore()
   const { character } = useBobaStore()
   const { isConnected, isConnecting, error, permissionRequest, connectClaude, disconnect, sendMessage, respondToPermission } = useClaude()
 
-  const currentSession = getCurrentSession()
+  const currentSession = currentSessionId ? sessionsObj[currentSessionId] : null
   const messages = currentSession?.messages || []
-  const sessions = getSessions()
+  const sessions = Object.values(sessionsObj).sort(
+    (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()
+  )
 
   useEffect(() => {
     setMounted(true)
@@ -39,7 +40,8 @@ export default function HomePage() {
     if (!currentSessionId) {
       createSession()
     }
-  }, [currentSessionId, createSession])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleSendMessage = async () => {
     if (!input.trim() || !isConnected) return
