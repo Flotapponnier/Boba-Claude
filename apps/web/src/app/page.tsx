@@ -17,13 +17,29 @@ export default function HomePage() {
   const [mounted, setMounted] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [input, setInput] = useState('')
-  const { messages, isLoading, addMessage } = useChatStore()
+  const {
+    currentSessionId,
+    isLoading,
+    addMessage,
+    createSession,
+    switchSession,
+    getSessions,
+    getCurrentSession
+  } = useChatStore()
   const { character } = useBobaStore()
   const { isConnected, isConnecting, error, permissionRequest, connectClaude, disconnect, sendMessage, respondToPermission } = useClaude()
 
+  const currentSession = getCurrentSession()
+  const messages = currentSession?.messages || []
+  const sessions = getSessions()
+
   useEffect(() => {
     setMounted(true)
-  }, [])
+    // Create initial session if none exists
+    if (!currentSessionId) {
+      createSession()
+    }
+  }, [currentSessionId, createSession])
 
   const handleSendMessage = async () => {
     if (!input.trim() || !isConnected) return
@@ -123,8 +139,9 @@ export default function HomePage() {
         </div>
 
         {/* Navigation */}
-        <div className="flex-1 p-4 space-y-2">
+        <div className="flex-1 p-4 space-y-2 overflow-y-auto">
           <button
+            onClick={() => createSession()}
             className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-opacity-10 hover:bg-black transition-colors"
             style={{ color: character === 'black' ? '#000000' : 'var(--text-primary)' }}
           >
@@ -137,13 +154,24 @@ export default function HomePage() {
               HISTORY
             </p>
             <div className="space-y-1">
-              <button
-                className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-opacity-10 hover:bg-black transition-colors text-left"
-                style={{ color: character === 'black' ? '#666666' : 'var(--text-secondary)' }}
-              >
-                <Clock size={16} />
-                <span className="text-sm truncate">Previous conversation...</span>
-              </button>
+              {sessions.map((session) => (
+                <button
+                  key={session.id}
+                  onClick={() => switchSession(session.id)}
+                  className={`w-full flex items-center gap-2 p-2 rounded-lg hover:bg-opacity-10 hover:bg-black transition-colors text-left ${
+                    currentSessionId === session.id ? 'bg-opacity-10 bg-black' : ''
+                  }`}
+                  style={{ color: character === 'black' ? '#666666' : 'var(--text-secondary)' }}
+                >
+                  <Clock size={16} />
+                  <span className="text-sm truncate">{session.title}</span>
+                </button>
+              ))}
+              {sessions.length === 0 && (
+                <p className="text-xs text-center py-4" style={{ color: character === 'black' ? '#999999' : 'var(--text-secondary)' }}>
+                  No conversations yet
+                </p>
+              )}
             </div>
           </div>
         </div>
