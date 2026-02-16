@@ -44,11 +44,15 @@ interface ChatStore {
   sessions: Record<string, ChatSession>
   currentSessionId: string | null
   isLoading: boolean
+  wasConnected: boolean
 
   // Session management
   createSession: () => string
   switchSession: (sessionId: string) => void
   deleteSession: (sessionId: string) => void
+
+  // Connection state
+  setWasConnected: (connected: boolean) => void
 
   // Message management
   addMessage: (message: Omit<Message, 'id' | 'timestamp'>) => void
@@ -62,6 +66,7 @@ export const useChatStore = create<ChatStore>()(
       sessions: {},
       currentSessionId: null,
       isLoading: false,
+      wasConnected: false,
 
       createSession: () => {
         const id = `session-${Date.now()}-${Math.random().toString(36).substring(7)}`
@@ -98,6 +103,8 @@ export const useChatStore = create<ChatStore>()(
           return { sessions: remainingSessions, currentSessionId: newCurrentId }
         })
       },
+
+      setWasConnected: (connected: boolean) => set({ wasConnected: connected }),
 
       addMessage: (message) => {
         set((state) => {

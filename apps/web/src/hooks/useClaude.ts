@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useChatStore } from '@/lib/store'
 import { io, Socket } from 'socket.io-client'
+import { useBobaStore } from '@/lib/store'
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001'
 
@@ -22,9 +23,10 @@ export function useClaude() {
   const [error, setError] = useState<string | null>(null)
   const [permissionRequest, setPermissionRequest] = useState<any>(null)
   const permissionQueueRef = useRef<any[]>([])
+  const autoConnectRef = useRef(false)
 
   const socketRef = useRef<Socket | null>(null)
-  const { addMessage, setLoading } = useChatStore()
+  const { addMessage, setLoading, wasConnected, setWasConnected } = useChatStore()
 
   // Connect to daemon directly via WebSocket
   const connectClaude = async () => {
@@ -41,6 +43,7 @@ export function useClaude() {
         setIsConnected(true)
         setIsConnecting(false)
         setError(null)
+        setWasConnected(true)
       })
 
       socket.on('ready', (data) => {
@@ -189,7 +192,16 @@ export function useClaude() {
 
     setIsConnected(false)
     setSessionId(null)
-  }, [])
+    setWasConnected(false)
+  }, [setWasConnected])
+
+  // Auto-reconnect on mount if was previously connected
+  useEffect(() => {
+    if (wasConnected && !autoConnectRef.current && !isConnected && !isConnecting) {
+      autoConnectRef.current = true
+      connectClaude()
+    }
+  }, [wasConnected, isConnected, isConnecting, connectClaude])
 
   // Cleanup on unmount
   useEffect(() => {
