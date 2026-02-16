@@ -23,7 +23,6 @@ export default function HomePage() {
   const {
     sessions: sessionsObj,
     currentSessionId,
-    isLoading,
     addMessage,
     createSession,
     switchSession,
@@ -35,6 +34,7 @@ export default function HomePage() {
 
   const currentSession = currentSessionId ? sessionsObj[currentSessionId] : null
   const messages = currentSession?.messages || []
+  const isLoading = currentSession?.isLoading || false
   const sessions = Object.values(sessionsObj).sort(
     (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()
   )

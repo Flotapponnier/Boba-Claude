@@ -38,12 +38,12 @@ interface ChatSession {
   messages: Message[]
   createdAt: Date
   updatedAt: Date
+  isLoading: boolean
 }
 
 interface ChatStore {
   sessions: Record<string, ChatSession>
   currentSessionId: string | null
-  isLoading: boolean
   wasConnected: boolean
 
   // Session management
@@ -57,7 +57,7 @@ interface ChatStore {
 
   // Message management
   addMessage: (message: Omit<Message, 'id' | 'timestamp'>) => void
-  setLoading: (loading: boolean) => void
+  setLoading: (sessionId: string, loading: boolean) => void
   clearMessages: () => void
 }
 
@@ -66,7 +66,6 @@ export const useChatStore = create<ChatStore>()(
     (set, get) => ({
       sessions: {},
       currentSessionId: null,
-      isLoading: false,
       wasConnected: false,
 
       createSession: () => {
@@ -77,6 +76,7 @@ export const useChatStore = create<ChatStore>()(
           messages: [],
           createdAt: new Date(),
           updatedAt: new Date(),
+          isLoading: false,
         }
 
         set((state) => ({
@@ -154,7 +154,22 @@ export const useChatStore = create<ChatStore>()(
         })
       },
 
-      setLoading: (loading) => set({ isLoading: loading }),
+      setLoading: (sessionId: string, loading: boolean) => {
+        set((state) => {
+          const session = state.sessions[sessionId]
+          if (!session) return state
+
+          return {
+            sessions: {
+              ...state.sessions,
+              [sessionId]: {
+                ...session,
+                isLoading: loading,
+              },
+            },
+          }
+        })
+      },
 
       clearMessages: () => {
         set((state) => {
@@ -201,6 +216,7 @@ export const useChatStore = create<ChatStore>()(
                       ...session,
                       createdAt: new Date(session.createdAt),
                       updatedAt: new Date(session.updatedAt),
+                      isLoading: session.isLoading ?? false, // Default to false for old sessions
                       messages: (session.messages || []).map((msg: any) => ({
                         ...msg,
                         timestamp: new Date(msg.timestamp),

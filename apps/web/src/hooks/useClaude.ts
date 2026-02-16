@@ -27,8 +27,6 @@ export function useClaude() {
   const autoConnectRef = useRef(false)
 
   const socketRef = useRef<Socket | null>(null)
-  const readySessionsRef = useRef<Set<string>>(new Set())
-  const pendingMessagesRef = useRef<Map<string, string[]>>(new Map())
   const { addMessage, setLoading, wasConnected, setWasConnected } = useChatStore()
 
   // Connect to daemon directly via WebSocket
@@ -64,33 +62,11 @@ export function useClaude() {
       // Session ready event - Claude process spawned for a session
       socket.on('session_ready', (data: { sessionId: string; claudeSessionId: string }) => {
         console.log(`[Frontend] Session ready: ${data.sessionId} (Claude ID: ${data.claudeSessionId})`)
-
-        // Mark session as ready
-        readySessionsRef.current.add(data.sessionId)
-
-        // Send any pending messages for this session
-        const pending = pendingMessagesRef.current.get(data.sessionId) || []
-        if (pending.length > 0) {
-          console.log(`[Frontend] Sending ${pending.length} pending messages for session ${data.sessionId}`)
-          pending.forEach(content => {
-            if (socket.connected) {
-              socket.emit('message', {
-                sessionId: data.sessionId,
-                content,
-              })
-            }
-          })
-          pendingMessagesRef.current.delete(data.sessionId)
-        }
       })
 
       // Session ended event - Claude process terminated
       socket.on('session_ended', (data: { sessionId: string; code: number }) => {
         console.log(`[Frontend] Session ended: ${data.sessionId} with code ${data.code}`)
-
-        // Clean up session state
-        readySessionsRef.current.delete(data.sessionId)
-        pendingMessagesRef.current.delete(data.sessionId)
       })
 
       // Claude messages (now includes sessionId)
@@ -128,7 +104,10 @@ export function useClaude() {
       socket.on('error', (data) => {
         console.error('[Frontend] Socket error:', data)
         setError(data.error || data.message || 'Socket error')
-        setLoading(false)
+        // Stop loading for the session that had the error
+        if (data.sessionId) {
+          setLoading(data.sessionId, false)
+        }
       })
 
       socket.on('disconnect', () => {
@@ -166,7 +145,9 @@ export function useClaude() {
             role: 'assistant',
             content: message.message.text || message.content || '',
           })
-          setLoading(false)
+          if (message.sessionId) {
+            setLoading(message.sessionId, false)
+          }
         } else if (message.tool) {
           console.log('[Frontend] Adding tool message:', message.tool.name)
           const toolInput = JSON.stringify(message.tool.input, null, 2)
@@ -182,7 +163,9 @@ export function useClaude() {
         break
 
       case 'thinking':
-        setLoading(message.isThinking || false)
+        if (message.sessionId) {
+          setLoading(message.sessionId, message.isThinking || false)
+        }
         break
 
       case 'output':
@@ -194,7 +177,9 @@ export function useClaude() {
       case 'error':
         console.error('[Frontend] Claude error:', message.error)
         setError(message.error || 'An error occurred')
-        setLoading(false)
+        if (message.sessionId) {
+          setLoading(message.sessionId, false)
+        }
         break
 
       default:
@@ -238,23 +223,14 @@ export function useClaude() {
     }
 
     try {
-      // Check if session is ready
-      if (readySessionsRef.current.has(sessionId)) {
-        // Session ready, send immediately
-        console.log(`[Frontend] Sending message to ready session ${sessionId}:`, content)
-        socketRef.current.emit('message', {
-          sessionId,
-          content,
-        })
-        setLoading(true)
-      } else {
-        // Session not ready yet, queue the message
-        console.log(`[Frontend] Session ${sessionId} not ready, queueing message:`, content)
-        const queue = pendingMessagesRef.current.get(sessionId) || []
-        queue.push(content)
-        pendingMessagesRef.current.set(sessionId, queue)
-        setLoading(true) // Show loading state anyway
-      }
+      // Send message directly to daemon - no queueing needed
+      // First message will trigger system/init, subsequent messages work normally
+      console.log(`[Frontend] Sending message for session ${sessionId}:`, content)
+      socketRef.current.emit('message', {
+        sessionId,
+        content,
+      })
+      setLoading(sessionId, true)
     } catch (err) {
       console.error('[Frontend] Failed to send message:', err)
       setError('Failed to send message')

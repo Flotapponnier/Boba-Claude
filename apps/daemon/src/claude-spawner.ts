@@ -54,21 +54,8 @@ export function spawnClaude(options: ClaudeSpawnerOptions): ChildProcess {
     stdio: ['pipe', 'pipe', 'inherit'], // pipe stdin/stdout for JSON communication
   })
 
-  // Send initial empty message to trigger system/init response
-  // This allows session_ready to be emitted before user sends first message
-  setTimeout(() => {
-    if (child.stdin) {
-      const initMessage = JSON.stringify({
-        type: 'user',
-        message: {
-          role: 'user',
-          content: '/help'
-        }
-      })
-      child.stdin.write(initMessage + '\n')
-      console.log(`[ClaudeSpawner] Sent initial message to trigger system/init`)
-    }
-  }, 100)
+  // Don't send initial message - let first user message trigger system/init
+  // The first message from sendMessage() will trigger system/init naturally
 
   // Forward stdout
   child.stdout?.on('data', (data: Buffer) => {
