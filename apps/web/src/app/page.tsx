@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useChatStore, useBobaStore } from '@/lib/store'
 import { useClaude } from '@/hooks/useClaude'
 import Image from 'next/image'
-import { Settings, Send, MessageSquare, Clock, Plug, PlugZap, Wrench } from 'lucide-react'
+import { Settings, Send, MessageSquare, Clock, Plug, PlugZap, Wrench, Trash2 } from 'lucide-react'
 
 const CHARACTER_IMAGES = {
   black: '/assets/branding/black_boba.png',
@@ -25,6 +25,7 @@ export default function HomePage() {
     addMessage,
     createSession,
     switchSession,
+    deleteSession,
   } = useChatStore()
   const { character } = useBobaStore()
   const { isConnected, isConnecting, error, permissionRequest, connectClaude, disconnect, sendMessage, respondToPermission } = useClaude()
@@ -159,17 +160,33 @@ export default function HomePage() {
             </p>
             <div className="space-y-1">
               {sessions.map((session) => (
-                <button
+                <div
                   key={session.id}
-                  onClick={() => switchSession(session.id)}
-                  className={`w-full flex items-center gap-2 p-2 rounded-lg hover:bg-opacity-10 hover:bg-black transition-colors text-left ${
+                  className={`group relative w-full flex items-center gap-2 p-2 rounded-lg hover:bg-opacity-10 hover:bg-black transition-colors ${
                     currentSessionId === session.id ? 'bg-opacity-10 bg-black' : ''
                   }`}
-                  style={{ color: character === 'black' ? '#666666' : 'var(--text-secondary)' }}
                 >
-                  <Clock size={16} />
-                  <span className="text-sm truncate">{session.title}</span>
-                </button>
+                  <button
+                    onClick={() => switchSession(session.id)}
+                    className="flex-1 flex items-center gap-2 text-left"
+                    style={{ color: character === 'black' ? '#666666' : 'var(--text-secondary)' }}
+                  >
+                    <Clock size={16} />
+                    <span className="text-sm truncate">{session.title}</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (confirm('Delete this chat?')) {
+                        deleteSession(session.id)
+                      }
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500 hover:bg-opacity-20 transition-opacity"
+                    style={{ color: '#ef4444' }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               ))}
               {sessions.length === 0 && (
                 <p className="text-xs text-center py-4" style={{ color: character === 'black' ? '#999999' : 'var(--text-secondary)' }}>
