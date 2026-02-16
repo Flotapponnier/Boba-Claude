@@ -185,9 +185,7 @@ export default function HomePage() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
-                      if (confirm('Delete this chat?')) {
-                        deleteSession(session.id)
-                      }
+                      deleteSession(session.id)
                     }}
                     className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500 hover:bg-opacity-20 transition-opacity"
                     style={{ color: '#ef4444' }}
