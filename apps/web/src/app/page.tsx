@@ -19,6 +19,7 @@ export default function HomePage() {
   const [input, setInput] = useState('')
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
+  const [activeClaudeSessions, setActiveClaudeSessions] = useState<Set<string>>(new Set())
   const {
     sessions: sessionsObj,
     currentSessionId,
@@ -30,7 +31,7 @@ export default function HomePage() {
     renameSession,
   } = useChatStore()
   const { character } = useBobaStore()
-  const { isConnected, isConnecting, error, permissionRequest, connectClaude, disconnect, sendMessage, respondToPermission, requestNewSession } = useClaude()
+  const { isConnected, isConnecting, error, permissionRequest, connectClaude, disconnect, sendMessage, respondToPermission, createSession: createClaudeSession, deleteSession: deleteClaudeSession } = useClaude()
 
   const currentSession = currentSessionId ? sessionsObj[currentSessionId] : null
   const messages = currentSession?.messages || []
@@ -42,27 +43,50 @@ export default function HomePage() {
     setMounted(true)
   }, [])
 
+  // Ensure Claude process exists for current session when connected
+  useEffect(() => {
+    if (isConnected && currentSessionId && !activeClaudeSessions.has(currentSessionId)) {
+      console.log(`[Frontend] Creating Claude process for persisted session: ${currentSessionId}`)
+      createClaudeSession(currentSessionId)
+      setActiveClaudeSessions(prev => new Set(prev).add(currentSessionId))
+    }
+  }, [isConnected, currentSessionId, activeClaudeSessions, createClaudeSession])
+
   const handleNewChat = () => {
-    createSession()
-    // Request fresh Claude context if connected
-    if (isConnected && requestNewSession) {
-      requestNewSession()
+    const sessionId = createSession()
+    console.log(`[Frontend UI] Creating new chat with sessionId: ${sessionId}`)
+    // Notify daemon to spawn Claude process for this session
+    if (isConnected && sessionId) {
+      console.log(`[Frontend UI] Daemon is connected, creating Claude session`)
+      createClaudeSession(sessionId)
+      setActiveClaudeSessions(prev => new Set(prev).add(sessionId))
+    } else {
+      console.log(`[Frontend UI] Not connected or no sessionId`, { isConnected, sessionId })
     }
   }
 
   const handleSendMessage = async () => {
     if (!input.trim() || !isConnected) return
 
-    // Create session if none exists
-    if (!currentSessionId) {
-      createSession()
+    // Create session if none exists (lazy creation)
+    let sessionId = currentSessionId
+    if (!sessionId) {
+      sessionId = createSession()
+    }
+
+    // Ensure Claude process exists for this session
+    if (sessionId && !activeClaudeSessions.has(sessionId)) {
+      createClaudeSession(sessionId)
+      setActiveClaudeSessions(prev => new Set(prev).add(sessionId))
     }
 
     // Add user message to UI
     addMessage({ role: 'user', content: input })
 
-    // Send via WebSocket
-    sendMessage(input)
+    // Send via WebSocket with sessionId
+    if (sessionId) {
+      sendMessage(input, sessionId)
+    }
     setInput('')
   }
 
@@ -225,7 +249,18 @@ export default function HomePage() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
+                      // Delete from UI store
                       deleteSession(session.id)
+                      // Notify daemon to kill Claude process
+                      if (isConnected) {
+                        deleteClaudeSession(session.id)
+                      }
+                      // Remove from active sessions tracking
+                      setActiveClaudeSessions(prev => {
+                        const newSet = new Set(prev)
+                        newSet.delete(session.id)
+                        return newSet
+                      })
                     }}
                     className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500 hover:bg-opacity-20 transition-opacity flex-shrink-0"
                     style={{ color: '#ef4444' }}
