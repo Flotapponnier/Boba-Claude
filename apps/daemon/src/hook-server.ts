@@ -69,32 +69,43 @@ export class HookServer {
           return
         }
 
-        // Generate requestId for tracking
-        const requestId = `${hookData.tool_name || 'unknown'}-${Date.now()}`
+        // Auto-approve read-only tools
+        const readOnlyTools = ['Read', 'Glob', 'Grep']
+        const isReadOnly = readOnlyTools.includes(hookData.tool_name)
 
-        // Format request for frontend
-        const permissionRequest = {
-          requestId,
-          toolName: hookData.tool_name,
-          input: hookData.tool_input,
+        let allowed: boolean
+
+        if (isReadOnly) {
+          console.log(`[Hook Server] Auto-approving read-only tool: ${hookData.tool_name}`)
+          allowed = true
+        } else {
+          // Generate requestId for tracking
+          const requestId = `${hookData.tool_name || 'unknown'}-${Date.now()}`
+
+          // Format request for frontend
+          const permissionRequest = {
+            requestId,
+            toolName: hookData.tool_name,
+            input: hookData.tool_input,
+          }
+
+          // Forward permission request to frontend via socket
+          this.socket.emit('permission_request', permissionRequest)
+          console.log('[Hook Server] Sent permission request:', permissionRequest)
+
+          // Wait for response with 30s timeout
+          allowed = await new Promise<boolean>((resolve) => {
+            this.pendingRequests.set(requestId, resolve)
+
+            setTimeout(() => {
+              if (this.pendingRequests.has(requestId)) {
+                this.pendingRequests.delete(requestId)
+                console.log('[Hook Server] Permission timeout, denying')
+                resolve(false) // Deny on timeout
+              }
+            }, 30000)
+          })
         }
-
-        // Forward permission request to frontend via socket
-        this.socket.emit('permission_request', permissionRequest)
-        console.log('[Hook Server] Sent permission request:', permissionRequest)
-
-        // Wait for response with 30s timeout
-        const allowed = await new Promise<boolean>((resolve) => {
-          this.pendingRequests.set(requestId, resolve)
-
-          setTimeout(() => {
-            if (this.pendingRequests.has(requestId)) {
-              this.pendingRequests.delete(requestId)
-              console.log('[Hook Server] Permission timeout, denying')
-              resolve(false) // Deny on timeout
-            }
-          }, 30000)
-        })
 
         console.log('[Hook Server] Permission result:', allowed ? 'ALLOWED' : 'DENIED')
         res.writeHead(200, { 'Content-Type': 'application/json' })
