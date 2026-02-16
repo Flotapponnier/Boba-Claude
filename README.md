@@ -4,22 +4,21 @@
 
 # Boba Claude
 
-A production-ready web platform enabling secure, mobile-accessible interaction with Claude AI, featuring persistent conversation history, session management, and code execution capabilities.
+A multi-session web interface for Claude Code CLI, featuring persistent conversation history, real-time communication, and tool execution permission management.
 
 ## Overview
 
-Boba Claude is a cloud-native application designed to provide seamless access to Claude AI from any device. Unlike complex multi-machine architectures, Boba Claude focuses on simplicity, reliability, and user experience while maintaining enterprise-grade security and scalability.
+Boba Claude provides a browser-based interface to interact with multiple Claude Code CLI instances simultaneously. Each chat session spawns its own Claude CLI process, enabling parallel conversations with full tool usage capabilities and permission management through hooks.
 
 ## Core Features
 
-- **Universal Access**: Web-based interface accessible from desktop and mobile devices
-- **Persistent Memory**: Full conversation history with intelligent session management
-- **Code Execution**: Isolated sandbox environment for safe code execution
-- **Session Management**: Create, rename, delete, and organize AI conversations
-- **Real-time Sync**: WebSocket-based live updates across devices
-- **Authentication**: Secure JWT-based authentication with session management
-- **Rate Limiting**: Built-in protection against API abuse
-- **Timeout Control**: Configurable session and request timeouts
+- **Multi-Session Support**: Run multiple Claude CLI processes simultaneously, one per chat session
+- **Persistent Memory**: Full conversation history stored in browser localStorage
+- **Session Management**: Create, rename, delete, and switch between AI conversations
+- **Real-time Communication**: WebSocket-based bidirectional streaming with Socket.IO
+- **Tool Permission System**: Interactive permission requests via Claude Code hooks
+- **Per-Session Loading States**: Visual feedback isolated to each active session
+- **Character Themes**: Customizable boba character themes (black, orange, pink, gold)
 
 ## Architecture
 
@@ -29,24 +28,19 @@ Boba Claude is a cloud-native application designed to provide seamless access to
 - React 18 with App Router
 - TypeScript for type safety
 - Tailwind CSS for responsive design
-- Zustand for state management
-- React Query for data fetching
-- Socket.io client for real-time updates
+- Zustand for state management with localStorage persistence
+- Socket.io client for real-time bidirectional communication
 
-**Backend (Node.js)**
-- Fastify for high-performance API server
-- Prisma ORM with PostgreSQL
-- Redis for session storage and caching
-- Socket.io for WebSocket connections
-- Docker for code execution isolation
-- Bull for background job processing
+**Daemon (Node.js)**
+- Socket.io server for WebSocket connections
+- Multi-session process manager (Map<sessionId, ClaudeProcess>)
+- Claude CLI spawner with SDK mode (--input-format stream-json --output-format stream-json)
+- Hook server for permission requests
 
-**Infrastructure**
-- Docker containers for all services
-- Kubernetes for orchestration
-- PostgreSQL 16 for persistent storage
-- Redis 7 for caching and sessions
-- Nginx for reverse proxy and SSL termination
+**Permission System**
+- API server (Express) handling permission requests via hooks
+- PreToolUse hooks configured in Claude CLI settings
+- Interactive UI for approving/denying tool executions
 
 ### Project Structure
 
@@ -55,129 +49,133 @@ boba-claude/
 ├── apps/
 │   ├── web/              # Next.js frontend application
 │   │   ├── src/
-│   │   │   ├── app/      # Next.js app router pages
-│   │   │   ├── components/
-│   │   │   ├── hooks/
-│   │   │   ├── lib/      # Utilities and configurations
-│   │   │   └── types/
-│   │   └── public/
-│   └── api/              # Fastify backend application
-│       ├── src/
-│       │   ├── routes/   # API endpoints
-│       │   ├── services/ # Business logic
-│       │   ├── models/   # Database models
-│       │   ├── middleware/
-│       │   └── utils/
-│       └── prisma/       # Database schemas and migrations
-├── packages/
-│   └── shared/           # Shared types and utilities
-│       ├── types/
-│       └── utils/
-├── infrastructure/
-│   ├── docker/           # Dockerfiles
-│   ├── kubernetes/       # K8s manifests
-│   └── nginx/            # Nginx configuration
-├── public/
-│   └── assets/
-│       └── branding/     # Boba logos and brand assets
-└── docs/                 # Additional documentation
+│   │   │   ├── app/      # Next.js app router (page.tsx)
+│   │   │   ├── components/ # UI components
+│   │   │   ├── hooks/    # useClaude.ts (Socket.IO + session management)
+│   │   │   └── lib/      # store.ts (Zustand state management)
+│   │   └── public/       # Static assets (boba character images)
+│   ├── daemon/           # Multi-session Claude CLI manager
+│   │   ├── src/
+│   │   │   ├── index.ts       # Socket.IO server + session router
+│   │   │   └── claude-spawner.ts # Claude CLI process spawner
+│   │   └── .claude/      # Claude CLI settings (hooks config)
+│   └── api/              # Permission server
+│       └── src/
+│           └── index.ts  # Express server for hook permission requests
+└── public/
+    └── assets/
+        └── branding/     # Boba character PNGs (black, orange, pink, gold)
 ```
+
+### How It Works
+
+1. **Frontend → Daemon**: User sends message via Socket.IO to daemon
+2. **Daemon**: Routes message to corresponding Claude CLI process (one per session)
+3. **Claude CLI**: Processes message, triggers PreToolUse hook before each tool
+4. **Hook → API**: Hook sends permission request to API server via curl
+5. **API → Frontend**: Permission request forwarded to browser via Socket.IO
+6. **User Decision**: User approves/denies in UI
+7. **Permission Response**: Flows back through API → Hook → Claude CLI
+8. **Claude Response**: Sent back through Daemon → Frontend
 
 ## Security Features
 
-- API keys stored securely on backend only
-- JWT-based authentication with refresh tokens
-- Rate limiting per user and global
-- Code execution in isolated Docker containers
-- Input sanitization and validation
-- CORS configuration for production
-- Environment-based secrets management
-- Automatic session expiration
+- **Anthropic API Key**: Stored in environment variables, never exposed to frontend
+- **Interactive Permission System**: User must approve each tool execution via hooks
+- **Session Isolation**: Each chat runs in its own Claude CLI process
+- **localStorage Only**: No backend database, all data stored client-side
+- **Process Cleanup**: Daemon automatically kills Claude processes when sessions are deleted
 
-## Deployment
+## Prerequisites
 
-### Prerequisites
-
-- Docker 24+
-- Kubernetes cluster (or local with Minikube/Kind)
-- PostgreSQL 16
-- Redis 7
 - Node.js 20+
+- Claude Code CLI installed and authenticated (`claude auth login`)
+- npm or pnpm
 
-### Environment Variables
+## Environment Variables
 
 ```env
-# Backend
-DATABASE_URL=postgresql://user:pass@localhost:5432/boba
-REDIS_URL=redis://localhost:6379
-ANTHROPIC_API_KEY=sk-ant-...
-JWT_SECRET=your-secret-key
-SESSION_TIMEOUT_MINUTES=30
+# Frontend (.env.local in apps/web/)
+NEXT_PUBLIC_WS_URL=http://localhost:3001  # Daemon WebSocket URL
 
-# Frontend
-NEXT_PUBLIC_API_URL=https://api.boba-claude.com
+# Daemon (optional, uses defaults)
+DAEMON_PORT=3001                          # Socket.IO server port
+PERMISSION_SERVER_PORT=3002               # Permission hook server port
+
+# API (optional)
+API_PORT=4000                             # Permission server port
 ```
 
-### Local Development
+## Local Development
 
 ```bash
 # Install dependencies
-pnpm install
+npm install
 
-# Run database migrations
-cd apps/api && pnpm prisma migrate dev
+# Terminal 1: Start permission API server
+cd apps/api && npm run dev
 
-# Start development servers
-pnpm dev
+# Terminal 2: Start daemon (Claude CLI manager)
+cd apps/daemon && npm run dev
+
+# Terminal 3: Start web frontend
+cd apps/web && npm run dev
+
+# Open browser at http://localhost:3000
 ```
 
-### Production Deployment
+### Development Workflow
 
-```bash
-# Build Docker images
-docker build -t boba-claude-web:latest -f infrastructure/docker/Dockerfile.web .
-docker build -t boba-claude-api:latest -f infrastructure/docker/Dockerfile.api .
-
-# Deploy to Kubernetes
-kubectl apply -f infrastructure/kubernetes/
-```
+1. Click "Connect to Claude" to establish WebSocket connection
+2. Create a new session (spawns a Claude CLI process)
+3. Send messages - Claude will request permissions via hooks
+4. Approve/deny each tool execution in the UI
+5. Switch between sessions to run multiple conversations
+6. Delete sessions to clean up Claude processes
 
 ## Roadmap
 
-### Phase 1: Core Platform (Current)
-- Web interface with chat functionality
-- Session management (create, rename, delete)
-- Claude API integration
-- Basic authentication
-- Kubernetes deployment
+### ✅ Phase 1: Multi-Session Support (Complete)
+- Multi-session architecture with independent Claude CLI processes
+- Socket.IO bidirectional communication
+- Per-session loading states
+- Session lifecycle management (create, delete, switch)
+- localStorage persistence
 
-### Phase 2: Enhanced Features
-- File upload and context management
-- Code execution sandbox
-- Advanced session search and filtering
-- Team collaboration features
-- Usage analytics dashboard
+### ✅ Phase 2: Permission System (Complete)
+- PreToolUse hooks integration
+- Interactive permission approval UI
+- Permission request forwarding via API server
+- Hook-based security layer
 
-### Phase 3: Mobile Experience
-- Progressive Web App (PWA) optimization
-- Native mobile apps (React Native)
-- Offline mode with sync
-- Push notifications
+### 🚧 Phase 3: UX Improvements (In Progress)
+- Cancel button for stuck loading states
+- Better error handling and user feedback
+- Session renaming functionality
+- Message search within sessions
 
-### Phase 4: Enterprise Features
-- Multi-tenant support
-- SSO integration
-- Advanced permission management
-- Audit logging
-- Custom model configurations
+### 📋 Phase 4: Enhanced Features (Planned)
+- File upload support for Claude context
+- Code execution output display
+- Session export/import
+- Keyboard shortcuts
+- Mobile-responsive improvements
 
-## Performance Goals
+## Technical Notes
 
-- Page load time: < 1s
-- API response time: < 200ms (p95)
-- WebSocket latency: < 50ms
-- Concurrent users: 10,000+
-- Uptime: 99.9%
+### Why Multi-Session?
+Each chat session spawns its own Claude CLI process to:
+- Enable parallel conversations without context mixing
+- Isolate tool permissions per session
+- Allow independent process management
+- Prevent session interference
+
+### Why Hooks?
+Claude Code hooks provide:
+- Fine-grained control over tool execution
+- Interactive approval workflow
+- Security boundary between Claude and system
+- Flexibility to customize permission logic
 
 ## Contributing
 
