@@ -36,8 +36,8 @@ export default function HomePage() {
 
   useEffect(() => {
     setMounted(true)
-    // Create initial session if none exists
-    if (!currentSessionId) {
+    // Create initial session only if no sessions exist at all
+    if (!currentSessionId && Object.keys(sessionsObj).length === 0) {
       createSession()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
