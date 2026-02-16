@@ -28,7 +28,7 @@ export default function HomePage() {
     deleteSession,
   } = useChatStore()
   const { character } = useBobaStore()
-  const { isConnected, isConnecting, error, permissionRequest, connectClaude, disconnect, sendMessage, respondToPermission } = useClaude()
+  const { isConnected, isConnecting, error, permissionRequest, connectClaude, disconnect, sendMessage, respondToPermission, requestNewSession } = useClaude()
 
   const currentSession = currentSessionId ? sessionsObj[currentSessionId] : null
   const messages = currentSession?.messages || []
@@ -45,6 +45,14 @@ export default function HomePage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const handleNewChat = () => {
+    createSession()
+    // Request fresh Claude context if connected
+    if (isConnected && requestNewSession) {
+      requestNewSession()
+    }
+  }
 
   const handleSendMessage = async () => {
     if (!input.trim() || !isConnected) return
@@ -146,7 +154,7 @@ export default function HomePage() {
         {/* Navigation */}
         <div className="flex-1 p-4 space-y-2 overflow-y-auto">
           <button
-            onClick={() => createSession()}
+            onClick={handleNewChat}
             className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-opacity-10 hover:bg-black transition-colors"
             style={{ color: character === 'black' ? '#000000' : 'var(--text-primary)' }}
           >

@@ -51,6 +51,11 @@ export function useClaude() {
         setSessionId(data.sessionId)
       })
 
+      socket.on('session_reset', (data) => {
+        console.log('[Frontend] Session reset, new session ID:', data.sessionId)
+        setSessionId(data.sessionId)
+      })
+
       socket.on('claude_message', (data) => {
         console.log('[Frontend] Received claude_message:', data)
         handleClaudeMessage({ type: 'claude_message', ...data })
@@ -183,6 +188,17 @@ export function useClaude() {
     setPermissionRequest(nextRequest)
   }, [permissionRequest])
 
+  // Request new session (restart Claude with fresh context)
+  const requestNewSession = useCallback(() => {
+    if (!socketRef.current || !socketRef.current.connected) {
+      setError('Not connected to Claude')
+      return
+    }
+
+    socketRef.current.emit('new_session')
+    console.log('[Frontend] Requested new session')
+  }, [])
+
   // Disconnect
   const disconnect = useCallback(async () => {
     if (socketRef.current) {
@@ -222,5 +238,6 @@ export function useClaude() {
     disconnect,
     sendMessage,
     respondToPermission,
+    requestNewSession,
   }
 }

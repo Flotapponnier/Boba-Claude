@@ -127,6 +127,111 @@ async function main() {
       })
     }
 
+    // Handle new session request - restart Claude with fresh context
+    socket.on('new_session', async () => {
+      console.log('[Boba Daemon] New session requested - restarting Claude...')
+
+      // Kill existing Claude process
+      if (claudeProcess) {
+        claudeProcess.kill('SIGTERM')
+        claudeProcess = null
+        currentSessionId = null
+      }
+
+      // Wait a bit for cleanup
+      await new Promise(resolve => setTimeout(resolve, 500))
+
+      // Spawn new Claude process
+      claudeProcess = spawnClaude({
+        hookPort: HOOK_PORT,
+        onOutput: async (data) => {
+          // Parse JSON lines from Claude
+          const lines = data.split('\n').filter(line => line.trim())
+          for (const line of lines) {
+            try {
+              const message = JSON.parse(line)
+
+              // Extract session ID from system/init message
+              if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
+                if (!currentSessionId) {
+                  currentSessionId = message.session_id
+                  console.log(`[Boba Daemon] Got new session ID: ${currentSessionId}`)
+
+                  // Notify frontend that session is ready
+                  if (frontendSocket) {
+                    frontendSocket.emit('ready', {
+                      type: 'ready',
+                      sessionId: currentSessionId,
+                    })
+                    frontendSocket.emit('session_reset', {
+                      sessionId: currentSessionId,
+                    })
+                  }
+                }
+              }
+
+              // Forward messages to frontend
+              if (frontendSocket && currentSessionId) {
+                if (message.type === 'assistant') {
+                  // Handle assistant message type - extract text and tool uses
+                  const messageObj = message.message
+                  if (messageObj && Array.isArray(messageObj.content)) {
+                    // Extract text
+                    const text = messageObj.content
+                      .filter((c: any) => c.type === 'text')
+                      .map((c: any) => c.text)
+                      .join('')
+
+                    // Extract tool uses
+                    const toolUses = messageObj.content
+                      .filter((c: any) => c.type === 'tool_use')
+
+                    // Send text if present
+                    if (text) {
+                      frontendSocket.emit('claude_message', {
+                        message: {
+                          type: 'text',
+                          text,
+                          role: 'assistant',
+                        },
+                      })
+                    }
+
+                    // Send tool uses (permissions already handled by hooks)
+                    for (const toolUse of toolUses) {
+                      console.log(`[Boba Daemon] Tool executed: ${toolUse.name}`)
+                      frontendSocket.emit('claude_message', {
+                        tool: {
+                          type: 'tool_use',
+                          id: toolUse.id,
+                          name: toolUse.name,
+                          input: toolUse.input,
+                        },
+                      })
+                    }
+                  }
+                } else if (message.type === 'system' || message.type === 'result') {
+                  // Ignore system and result messages
+                }
+              }
+            } catch (e) {
+              // Not JSON, log it
+              console.log('[Claude]', data)
+            }
+          }
+        },
+        onExit: (code) => {
+          console.log(`[Boba Daemon] Claude exited with code ${code}`)
+          // Don't exit daemon if Claude crashes during session reset
+          if (code !== null && code !== 0 && code !== 15) {
+            process.exit(code)
+          }
+        },
+      })
+
+      console.log('[Boba Daemon] Claude restarted with fresh context')
+    })
+
     // Handle messages from frontend
     socket.on('message', (data: any) => {
       console.log('[Boba Daemon] Received user message:', data.content)
