@@ -69,6 +69,11 @@ export function useClaude() {
         console.log(`[Frontend] Session ended: ${data.sessionId} with code ${data.code}`)
       })
 
+      socket.on('session_cancelled', (data: { sessionId: string }) => {
+        console.log(`[Frontend] Session cancelled: ${data.sessionId}`)
+        setLoading(data.sessionId, false)
+      })
+
       // Claude messages (now includes sessionId)
       socket.on('claude_message', (data: ClaudeMessage) => {
         // Get current session ID from store directly (not from closure)
@@ -254,6 +259,13 @@ export function useClaude() {
     setPermissionRequest(nextRequest)
   }, [permissionRequest])
 
+  // Cancel current operation for a session (kills and respawns Claude process)
+  const cancelSession = useCallback((sessionId: string) => {
+    if (!socketRef.current || !socketRef.current.connected) return
+    console.log(`[Frontend] Cancelling session: ${sessionId}`)
+    socketRef.current.emit('cancel_session', { sessionId })
+  }, [])
+
   // Disconnect
   const disconnect = useCallback(async () => {
     if (socketRef.current) {
@@ -291,6 +303,7 @@ export function useClaude() {
     disconnect,
     createSession,
     deleteSession,
+    cancelSession,
     sendMessage,
     respondToPermission,
   }

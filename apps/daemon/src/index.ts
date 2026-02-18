@@ -185,6 +185,24 @@ async function main() {
       }
     })
 
+    // Handle cancel - kill and respawn Claude process for the session
+    socket.on('cancel_session', (data: { sessionId: string }) => {
+      const { sessionId } = data
+      console.log(`[Boba Daemon] Cancelling session: ${sessionId}`)
+
+      const sessionInfo = claudeSessions.get(sessionId)
+      if (sessionInfo) {
+        sessionInfo.process.kill('SIGTERM')
+        claudeSessions.delete(sessionId)
+      }
+
+      // Respawn fresh Claude process for the session
+      spawnClaudeForSession(sessionId, socket)
+
+      // Notify frontend that cancel was processed
+      socket.emit('session_cancelled', { sessionId })
+    })
+
     // Handle messages from frontend (with sessionId)
     socket.on('message', (data: { sessionId: string; content: string }) => {
       const { sessionId, content } = data

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useChatStore, useBobaStore } from '@/lib/store'
 import { useClaude } from '@/hooks/useClaude'
 import Image from 'next/image'
-import { Settings, Send, MessageSquare, Clock, Plug, PlugZap, Wrench, Trash2, Pencil } from 'lucide-react'
+import { Settings, Send, MessageSquare, Clock, Plug, PlugZap, Wrench, Trash2, Pencil, X } from 'lucide-react'
 
 const CHARACTER_IMAGES = {
   black: '/assets/branding/black_boba.png',
@@ -30,7 +30,7 @@ export default function HomePage() {
     renameSession,
   } = useChatStore()
   const { character } = useBobaStore()
-  const { isConnected, isConnecting, error, permissionRequest, connectClaude, disconnect, sendMessage, respondToPermission, createSession: createClaudeSession, deleteSession: deleteClaudeSession } = useClaude()
+  const { isConnected, isConnecting, error, permissionRequest, connectClaude, disconnect, sendMessage, respondToPermission, createSession: createClaudeSession, deleteSession: deleteClaudeSession, cancelSession } = useClaude()
 
   const currentSession = currentSessionId ? sessionsObj[currentSessionId] : null
   const messages = currentSession?.messages || []
@@ -382,8 +382,8 @@ export default function HomePage() {
 
           {/* Loading Indicator */}
           {isLoading && (
-            <div className="flex justify-start items-center">
-              <div className="relative w-16 h-16 mr-3">
+            <div className="flex justify-start items-center gap-3">
+              <div className="relative w-16 h-16 flex-shrink-0">
                 {/* Rotating dots around boba */}
                 <div className="absolute inset-0 animate-spin-slow">
                   <div className="absolute w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--accent)', top: '8%', left: '50%', transform: 'translateX(-50%)' }}></div>
@@ -416,6 +416,18 @@ export default function HomePage() {
                   <div className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--accent)', animationDelay: '300ms' }}></div>
                 </div>
               </div>
+              {/* Cancel button */}
+              {currentSessionId && (
+                <button
+                  onClick={() => cancelSession(currentSessionId)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all hover:scale-105"
+                  style={{ backgroundColor: '#ef4444', color: '#ffffff' }}
+                  title="Cancel current operation"
+                >
+                  <X size={14} />
+                  Cancel
+                </button>
+              )}
             </div>
           )}
         </div>
