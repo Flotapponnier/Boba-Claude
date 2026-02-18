@@ -11,6 +11,7 @@ function getWsUrl(): string {
 
   const host = window.location.hostname
   const protocol = window.location.protocol
+  const port = window.location.port
 
   // Coder port-forwarded URL pattern: 3000--workspace--user.coder-domain.com
   // Replace port prefix 3000 with 3001 to reach daemon
@@ -18,6 +19,13 @@ function getWsUrl(): string {
   if (coderMatch) {
     const daemonHost = `3001${coderMatch[2]}`
     return `${protocol}//${daemonHost}`
+  }
+
+  // If running on a non-standard port via tunnel (e.g., localhost:13000),
+  // assume daemon is on port+1 (e.g., localhost:13001)
+  if (port && port !== '3000' && port !== '80' && port !== '443' && host === 'localhost') {
+    const daemonPort = String(Number(port) + 1)
+    return `http://localhost:${daemonPort}`
   }
 
   return process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001'
