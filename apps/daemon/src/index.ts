@@ -207,6 +207,12 @@ async function main() {
       const { sessionId, content } = data
       console.log(`[Boba Daemon] Message for session ${sessionId}:`, content)
 
+      // Auto-spawn if session doesn't exist (handles race conditions on reconnect)
+      if (!claudeSessions.has(sessionId)) {
+        console.log(`[Boba Daemon] Session ${sessionId} not found, auto-spawning...`)
+        spawnClaudeForSession(sessionId)
+      }
+
       const sessionInfo = claudeSessions.get(sessionId)
       if (sessionInfo && sessionInfo.process.stdin) {
         const message = JSON.stringify({
