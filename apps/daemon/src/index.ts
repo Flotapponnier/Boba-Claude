@@ -129,7 +129,16 @@ async function main() {
   // Create Socket.IO server
   const io = new Server(httpServer, {
     cors: {
-      origin: 'http://localhost:3000',
+      // Allow localhost for local dev and any Coder port-forwarded origin
+      origin: (origin, callback) => {
+        // Allow requests with no origin (same-origin, curl, etc.)
+        if (!origin) return callback(null, true)
+        // Allow localhost (any port)
+        if (origin.includes('localhost') || origin.includes('127.0.0.1')) return callback(null, true)
+        // Allow Coder port-forwarded URLs (pattern: https://PORT--workspace--user.domain.com)
+        if (origin.match(/https?:\/\/\d+--/)) return callback(null, true)
+        callback(new Error('Not allowed by CORS'))
+      },
       methods: ['GET', 'POST'],
       credentials: true,
     },

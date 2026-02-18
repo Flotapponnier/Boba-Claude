@@ -5,7 +5,25 @@ import { useChatStore } from '@/lib/store'
 import { io, Socket } from 'socket.io-client'
 import { useBobaStore } from '@/lib/store'
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001'
+// Auto-detect WebSocket URL for Coder port-forwarding or fallback to env/localhost
+function getWsUrl(): string {
+  if (typeof window === 'undefined') return process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001'
+
+  const host = window.location.hostname
+  const protocol = window.location.protocol
+
+  // Coder port-forwarded URL pattern: 3000--workspace--user.coder-domain.com
+  // Replace port prefix 3000 with 3001 to reach daemon
+  const coderMatch = host.match(/^(\d+)(--.+)$/)
+  if (coderMatch) {
+    const daemonHost = `3001${coderMatch[2]}`
+    return `${protocol}//${daemonHost}`
+  }
+
+  return process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001'
+}
+
+const WS_URL = getWsUrl()
 
 interface ClaudeMessage {
   type: 'ready' | 'claude_message' | 'thinking' | 'session_update' | 'error' | 'output' | 'session_ready'
