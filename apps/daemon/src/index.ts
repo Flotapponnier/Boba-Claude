@@ -5,7 +5,7 @@ import { spawnClaude } from './claude-spawner.js'
 import { ChildProcess } from 'node:child_process'
 import { HookServer } from './hook-server.js'
 
-const WS_PORT = 3001
+const WS_PORT = parseInt(process.env.PORT || '3001', 10)
 const HOOK_PORT = 3002
 
 // Multi-session management: Map sessionId -> Claude process
@@ -137,6 +137,11 @@ async function main() {
         if (origin.includes('localhost') || origin.includes('127.0.0.1')) return callback(null, true)
         // Allow Coder port-forwarded URLs (pattern: https://PORT--workspace--user.domain.com)
         if (origin.match(/https?:\/\/\d+--/)) return callback(null, true)
+        // Allow Railway deployments
+        if (origin.includes('railway.app') || origin.includes('up.railway.app')) return callback(null, true)
+        // Allow custom domain via ALLOWED_ORIGIN env var
+        const allowedOrigin = process.env.ALLOWED_ORIGIN
+        if (allowedOrigin && origin === allowedOrigin) return callback(null, true)
         callback(new Error('Not allowed by CORS'))
       },
       methods: ['GET', 'POST'],
