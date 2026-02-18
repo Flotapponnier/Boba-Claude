@@ -216,7 +216,7 @@ export const useChatStore = create<ChatStore>()(
                       ...session,
                       createdAt: new Date(session.createdAt),
                       updatedAt: new Date(session.updatedAt),
-                      isLoading: session.isLoading ?? false, // Default to false for old sessions
+                      isLoading: false, // Always reset on page load - never persist stuck states
                       messages: (session.messages || []).map((msg: any) => ({
                         ...msg,
                         timestamp: new Date(msg.timestamp),
