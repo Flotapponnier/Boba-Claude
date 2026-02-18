@@ -36,7 +36,7 @@ export function useClaude() {
       setError(null)
 
       const socket = io(WS_URL, {
-        transports: ['websocket', 'polling'],
+        transports: ['websocket'],
         timeout: 5000,
         reconnection: false,
       })

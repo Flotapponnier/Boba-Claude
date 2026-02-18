@@ -133,7 +133,7 @@ async function main() {
       methods: ['GET', 'POST'],
       credentials: true,
     },
-    transports: ['websocket', 'polling'],
+    transports: ['websocket'],
   })
 
   // Start hook server for tool permissions
