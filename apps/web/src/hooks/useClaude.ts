@@ -31,8 +31,6 @@ function getWsUrl(): string {
   return process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001'
 }
 
-const WS_URL = getWsUrl()
-
 interface ClaudeMessage {
   type: 'ready' | 'claude_message' | 'thinking' | 'session_update' | 'error' | 'output' | 'session_ready'
   sessionId?: string
@@ -61,7 +59,7 @@ export function useClaude() {
       setIsConnecting(true)
       setError(null)
 
-      const socket = io(WS_URL, {
+      const socket = io(getWsUrl(), {
         transports: ['websocket'],
         timeout: 5000,
         reconnection: false,
