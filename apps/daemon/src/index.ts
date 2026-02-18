@@ -15,7 +15,8 @@ let frontendSocket: any = null
 let pendingTools = new Map<string, { resolve: (allowed: boolean) => void; toolUse: any }>()
 
 // Helper: Create Claude output handler for a specific session
-function createClaudeOutputHandler(uiSessionId: string, socket: any) {
+// Uses frontendSocket global so output always goes to current connected client
+function createClaudeOutputHandler(uiSessionId: string) {
   return async (data: string) => {
     console.log(`[Output Handler ${uiSessionId}] Got data: ${data.length} bytes`)
     const lines = data.split('\n').filter(line => line.trim())
@@ -33,7 +34,7 @@ function createClaudeOutputHandler(uiSessionId: string, socket: any) {
             console.log(`[Boba Daemon] Session ${uiSessionId} got Claude session ID: ${message.session_id}`)
 
             // Notify frontend that session is ready
-            socket.emit('session_ready', {
+            frontendSocket?.emit('session_ready', {
               sessionId: uiSessionId,
               claudeSessionId: message.session_id,
             })
@@ -63,7 +64,7 @@ function createClaudeOutputHandler(uiSessionId: string, socket: any) {
             // Send text if present
             if (text) {
               console.log(`[Output Handler ${uiSessionId}] Emitting claude_message to frontend`)
-              socket.emit('claude_message', {
+              frontendSocket?.emit('claude_message', {
                 sessionId: uiSessionId,
                 message: {
                   type: 'text',
@@ -77,7 +78,7 @@ function createClaudeOutputHandler(uiSessionId: string, socket: any) {
             // Send tool uses
             for (const toolUse of toolUses) {
               console.log(`[Boba Daemon] Session ${uiSessionId} - Tool executed: ${toolUse.name}`)
-              socket.emit('claude_message', {
+              frontendSocket?.emit('claude_message', {
                 sessionId: uiSessionId,
                 tool: {
                   type: 'tool_use',
@@ -98,18 +99,18 @@ function createClaudeOutputHandler(uiSessionId: string, socket: any) {
 }
 
 // Helper: Spawn Claude process for a session
-function spawnClaudeForSession(sessionId: string, socket: any) {
+function spawnClaudeForSession(sessionId: string) {
   console.log(`[Boba Daemon] Spawning Claude for session ${sessionId}`)
 
   const process = spawnClaude({
     hookPort: HOOK_PORT,
-    onOutput: createClaudeOutputHandler(sessionId, socket),
+    onOutput: createClaudeOutputHandler(sessionId),
     onExit: (code) => {
       console.log(`[Boba Daemon] Claude for session ${sessionId} exited with code ${code}`)
       claudeSessions.delete(sessionId)
 
-      // Notify frontend
-      socket.emit('session_ended', { sessionId, code })
+      // Notify frontend via current socket
+      frontendSocket?.emit('session_ended', { sessionId, code })
     },
   })
 
@@ -157,20 +158,18 @@ async function main() {
       if (claudeSessions.has(sessionId)) {
         console.log(`[Boba Daemon] Session ${sessionId} already exists, emitting session_ready`)
         const sessionInfo = claudeSessions.get(sessionId)
-        // Emit session_ready with existing Claude session ID
-        if (sessionInfo && sessionInfo.claudeSessionId) {
-          socket.emit('session_ready', {
-            sessionId,
-            claudeSessionId: sessionInfo.claudeSessionId,
-          })
-        }
+        // Always emit session_ready so reconnecting frontend knows the session is alive
+        socket.emit('session_ready', {
+          sessionId,
+          claudeSessionId: sessionInfo?.claudeSessionId || null,
+        })
         return
       }
 
       console.log(`[Boba Daemon] Creating session: ${sessionId}`)
 
       // Spawn Claude process for this session
-      spawnClaudeForSession(sessionId, socket)
+      spawnClaudeForSession(sessionId)
     })
 
     // Handle session deletion
@@ -197,7 +196,7 @@ async function main() {
       }
 
       // Respawn fresh Claude process for the session
-      spawnClaudeForSession(sessionId, socket)
+      spawnClaudeForSession(sessionId)
 
       // Notify frontend that cancel was processed
       socket.emit('session_cancelled', { sessionId })

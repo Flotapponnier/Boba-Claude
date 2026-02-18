@@ -50,6 +50,14 @@ export function useClaude() {
         setIsConnecting(false)
         setError(null)
         setWasConnected(true)
+
+        // Auto-register all existing sessions so daemon re-attaches or spawns them
+        const { sessions } = useChatStore.getState()
+        const sessionIds = Object.keys(sessions)
+        if (sessionIds.length > 0) {
+          console.log('[Frontend] Re-registering existing sessions:', sessionIds)
+          sessionIds.forEach((sid) => socket.emit('create_session', { sessionId: sid }))
+        }
       })
 
       socket.on('connect_error', (err) => {
