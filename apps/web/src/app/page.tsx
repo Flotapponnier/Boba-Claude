@@ -5,6 +5,8 @@ import { useChatStore, useBobaStore } from '@/lib/store'
 import { useClaude } from '@/hooks/useClaude'
 import Image from 'next/image'
 import { Settings, Send, MessageSquare, Clock, Plug, PlugZap, Wrench, Trash2, Pencil, X } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 const CHARACTER_IMAGES = {
   black: '/assets/branding/black_boba.png',
@@ -39,9 +41,16 @@ export default function HomePage() {
     (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()
   )
 
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Auto-scroll to bottom on new messages or loading state
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, isLoading])
 
   // Ensure Claude process exists for current session when connected
   useEffect(() => {
@@ -373,12 +382,41 @@ export default function HomePage() {
                       color: message.role === 'user' ? '#ffffff' : 'var(--text-primary)',
                     }}
                   >
-                    {message.content}
+                    {message.role === 'assistant' ? (
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                          code: ({ children, className }) => {
+                            const isBlock = className?.includes('language-')
+                            return isBlock ? (
+                              <code className="block bg-black bg-opacity-20 rounded p-2 text-sm font-mono overflow-x-auto my-2">{children}</code>
+                            ) : (
+                              <code className="bg-black bg-opacity-20 rounded px-1 text-sm font-mono">{children}</code>
+                            )
+                          },
+                          ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
+                          strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+                          em: ({ children }) => <em className="italic">{children}</em>,
+                          h1: ({ children }) => <h1 className="text-xl font-bold mb-2">{children}</h1>,
+                          h2: ({ children }) => <h2 className="text-lg font-bold mb-2">{children}</h2>,
+                          h3: ({ children }) => <h3 className="text-base font-bold mb-1">{children}</h3>,
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    ) : (
+                      message.content
+                    )}
                   </div>
                 )}
               </div>
             ))
           )}
+
+          {/* Scroll anchor */}
+          <div ref={messagesEndRef} />
 
           {/* Loading Indicator */}
           {isLoading && (
