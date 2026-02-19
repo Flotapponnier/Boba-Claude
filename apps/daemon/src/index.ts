@@ -137,6 +137,8 @@ async function main() {
         if (origin.includes('localhost') || origin.includes('127.0.0.1')) return callback(null, true)
         // Allow Coder port-forwarded URLs (pattern: https://PORT--workspace--user.domain.com)
         if (origin.match(/https?:\/\/\d+--/)) return callback(null, true)
+        // Allow Vercel deployments
+        if (origin.includes('vercel.app')) return callback(null, true)
         callback(new Error('Not allowed by CORS'))
       },
       methods: ['GET', 'POST'],
