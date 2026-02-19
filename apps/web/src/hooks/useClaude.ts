@@ -119,15 +119,15 @@ export function useClaude() {
           return
         }
 
-        handleClaudeMessage({ type: 'claude_message', ...data })
+        handleClaudeMessage({ ...data, type: 'claude_message' })
       })
 
       socket.on('thinking', (data) => {
-        handleClaudeMessage({ type: 'thinking', ...data })
+        handleClaudeMessage({ ...data, type: 'thinking' })
       })
 
       socket.on('session_update', (data) => {
-        handleClaudeMessage({ type: 'session_update', ...data })
+        handleClaudeMessage({ ...data, type: 'session_update' })
       })
 
       socket.on('permission_request', (data) => {
