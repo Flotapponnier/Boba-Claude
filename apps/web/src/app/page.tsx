@@ -509,32 +509,34 @@ function PermissionModal({ toolName, input, onAllow, onDeny }: {
 }) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="rounded-2xl p-6 max-w-md w-full" style={{ backgroundColor: '#ffffff' }}>
-        <h2 className="text-2xl font-bold mb-4" style={{ color: '#000000' }}>
+      <div className="rounded-2xl p-6 max-w-md w-full flex flex-col" style={{ backgroundColor: '#ffffff', maxHeight: '80vh' }}>
+        <h2 className="text-2xl font-bold mb-4 flex-shrink-0" style={{ color: '#000000' }}>
           Tool Permission
         </h2>
 
-        <div className="mb-4">
-          <p className="text-sm font-medium mb-2" style={{ color: '#666666' }}>
-            Claude wants to use:
-          </p>
-          <div className="p-3 rounded-lg" style={{ backgroundColor: '#f5f5f5' }}>
-            <span className="font-mono font-bold" style={{ color: '#000000' }}>
-              {toolName}
-            </span>
+        <div className="flex-1 overflow-y-auto mb-6">
+          <div className="mb-4">
+            <p className="text-sm font-medium mb-2" style={{ color: '#666666' }}>
+              Claude wants to use:
+            </p>
+            <div className="p-3 rounded-lg" style={{ backgroundColor: '#f5f5f5' }}>
+              <span className="font-mono font-bold" style={{ color: '#000000' }}>
+                {toolName}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-sm font-medium mb-2" style={{ color: '#666666' }}>
+              Input:
+            </p>
+            <pre className="p-3 rounded-lg overflow-x-auto text-xs" style={{ backgroundColor: '#f5f5f5', color: '#000000' }}>
+              {JSON.stringify(input, null, 2)}
+            </pre>
           </div>
         </div>
 
-        <div className="mb-6">
-          <p className="text-sm font-medium mb-2" style={{ color: '#666666' }}>
-            Input:
-          </p>
-          <pre className="p-3 rounded-lg overflow-x-auto text-xs" style={{ backgroundColor: '#f5f5f5', color: '#000000' }}>
-            {JSON.stringify(input, null, 2)}
-          </pre>
-        </div>
-
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-shrink-0">
           <button
             onClick={onDeny}
             className="flex-1 py-3 rounded-xl font-medium"
