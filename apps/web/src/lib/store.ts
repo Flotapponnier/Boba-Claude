@@ -193,7 +193,6 @@ export const useChatStore = create<ChatStore>()(
     }),
     {
       name: 'chat-storage',
-      partialUpdate: true,
       partialize: (state) => ({
         sessions: state.sessions,
         currentSessionId: state.currentSessionId,
