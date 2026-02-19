@@ -17,7 +17,7 @@ echo "⚙️  Installing PM2..."
 sudo npm install -g pm2
 
 # Clone repo (or pull if exists)
-REPO_URL="https://github.com/Flotapponnier/Boba-Claude.git"
+REPO_URL="https://github.com/MobulaFi/Boba_Claude.git"
 APP_DIR="$HOME/boba-claude"
 
 if [ -d "$APP_DIR" ]; then
