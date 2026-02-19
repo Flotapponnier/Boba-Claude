@@ -139,6 +139,8 @@ async function main() {
         if (origin.match(/https?:\/\/\d+--/)) return callback(null, true)
         // Allow Vercel deployments
         if (origin.includes('vercel.app')) return callback(null, true)
+        // Allow bore.pub tunnel
+        if (origin.includes('bore.pub')) return callback(null, true)
         callback(new Error('Not allowed by CORS'))
       },
       methods: ['GET', 'POST'],
