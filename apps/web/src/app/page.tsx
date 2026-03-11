@@ -1,11 +1,10 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useChatStore, useBobaStore } from '@/lib/store'
+import { useChatStore, useBobaStore, useAuthStore } from '@/lib/store'
 import { useClaude } from '@/hooks/useClaude'
-import { AuthButton } from '@/components/AuthButton'
 import Image from 'next/image'
-import { Settings, Send, MessageSquare, Clock, Plug, PlugZap, Wrench, Trash2, Pencil, X, RotateCcw } from 'lucide-react'
+import { Settings, Send, MessageSquare, Clock, Plug, PlugZap, Wrench, Trash2, Pencil, X, RotateCcw, LogIn, LogOut } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -35,7 +34,23 @@ export default function HomePage() {
     setClaudeSessionId,
   } = useChatStore()
   const { character } = useBobaStore()
+  const { authToken, setAuthToken, setUserId, logout } = useAuthStore()
   const { isConnected, isConnecting, error, permissionRequest, connectClaude, disconnect, sendMessage, respondToPermission, createSession: createClaudeSession, deleteSession: deleteClaudeSession, cancelSession } = useClaude()
+
+  // Simple guest login handler
+  const handleGuestLogin = async () => {
+    try {
+      const response = await fetch('http://localhost:3002/api/auth/guest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const data = await response.json()
+      setAuthToken(data.token)
+      setUserId(data.account.id)
+    } catch (err) {
+      console.error('Guest login failed:', err)
+    }
+  }
 
   const currentSession = currentSessionId ? sessionsObj[currentSessionId] : null
   const messages = currentSession?.messages || []
@@ -163,8 +178,26 @@ export default function HomePage() {
 
           {/* Auth & Connection Status */}
           <div className="space-y-3">
-            {/* Auth Button (Guest Login / Logout / Claude OAuth) */}
-            <AuthButton />
+            {/* Simple Guest Login/Logout */}
+            {!authToken ? (
+              <button
+                onClick={handleGuestLogin}
+                className="w-full flex items-center gap-2 justify-center p-2 rounded-lg transition-all hover:scale-105"
+                style={{ backgroundColor: 'var(--accent)', color: '#ffffff' }}
+              >
+                <LogIn size={16} />
+                <span className="text-sm font-medium">Guest Login</span>
+              </button>
+            ) : (
+              <button
+                onClick={logout}
+                className="w-full flex items-center gap-2 justify-center p-2 rounded-lg transition-all hover:scale-105"
+                style={{ backgroundColor: '#6b7280', color: '#ffffff' }}
+              >
+                <LogOut size={16} />
+                <span className="text-sm font-medium">Logout</span>
+              </button>
+            )}
 
             <div className="flex items-center gap-2 justify-center">
               <div
