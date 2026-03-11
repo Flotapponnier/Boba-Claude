@@ -43,6 +43,7 @@ export default function HomePage() {
       const response = await fetch('http://localhost:3002/api/auth/guest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
       })
       const data = await response.json()
       setAuthToken(data.token)
