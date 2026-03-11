@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id           String         @id @default(cuid())
+  publicKey    String         @unique
+  username     String?        @unique
+  firstName    String?
+  lastName     String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  claudeTokens ClaudeToken[]
+  sessions     Session[]
+}
+
+model ClaudeToken {
+  id          String   @id @default(cuid())
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accessToken Bytes    // Encrypted OAuth access token
+  refreshToken Bytes?  // Encrypted OAuth refresh token
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([accountId])
+  @@index([accountId])
+}
+
+model Session {
+  id              String   @id @default(cuid())
+  accountId       String
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  title           String   @default("New Chat")
+  claudeSessionId String?  // Claude CLI session ID for resume
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([accountId])
+}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { useChatStore } from '@/lib/store'
+import { useChatStore, useAuthStore } from '@/lib/store'
 import { io, Socket } from 'socket.io-client'
 import { useBobaStore } from '@/lib/store'
 
@@ -52,6 +52,7 @@ export function useClaude() {
 
   const socketRef = useRef<Socket | null>(null)
   const { addMessage, setLoading, wasConnected, setWasConnected } = useChatStore()
+  const { authToken } = useAuthStore()
 
   // Connect to daemon directly via WebSocket
   const connectClaude = useCallback(async () => {
@@ -59,10 +60,20 @@ export function useClaude() {
       setIsConnecting(true)
       setError(null)
 
+      // Require authentication
+      if (!authToken) {
+        setError('Please login first')
+        setIsConnecting(false)
+        return
+      }
+
       const socket = io(getWsUrl(), {
         transports: ['websocket'],
         timeout: 5000,
         reconnection: false,
+        auth: {
+          token: authToken,
+        },
       })
 
       // Set socketRef IMMEDIATELY before setting up handlers
@@ -182,7 +193,7 @@ export function useClaude() {
       setError('Failed to connect socket')
       setIsConnecting(false)
     }
-  }, [setWasConnected, setLoading, permissionRequest])
+  }, [setWasConnected, setLoading, permissionRequest, authToken])
 
   // Handle messages from Claude
   const handleClaudeMessage = (message: ClaudeMessage) => {

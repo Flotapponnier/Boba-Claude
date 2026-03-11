@@ -42,6 +42,29 @@ interface ChatSession {
   claudeSessionId?: string // Optional: ID of resumed Claude session
 }
 
+interface AuthStore {
+  authToken: string | null
+  userId: string | null
+  setAuthToken: (token: string | null) => void
+  setUserId: (userId: string | null) => void
+  logout: () => void
+}
+
+export const useAuthStore = create<AuthStore>()(
+  persist(
+    (set) => ({
+      authToken: null,
+      userId: null,
+      setAuthToken: (authToken) => set({ authToken }),
+      setUserId: (userId) => set({ userId }),
+      logout: () => set({ authToken: null, userId: null }),
+    }),
+    {
+      name: 'auth-storage',
+    }
+  )
+)
+
 interface ChatStore {
   sessions: Record<string, ChatSession>
   currentSessionId: string | null

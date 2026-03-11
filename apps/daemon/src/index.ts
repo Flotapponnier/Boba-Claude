@@ -7,9 +7,14 @@ import { HookServer } from './hook-server.js'
 
 const WS_PORT = 3001
 const HOOK_PORT = 3002
+const API_URL = process.env.API_URL || 'http://localhost:3002'
 
-// Multi-session management: Map sessionId -> Claude process
-const claudeSessions = new Map<string, { process: ChildProcess; claudeSessionId: string | null }>()
+// Multi-session management: Map sessionId -> { process, userId, claudeSessionId }
+const claudeSessions = new Map<string, {
+  process: ChildProcess
+  claudeSessionId: string | null
+  userId: string
+}>()
 let hookServer: HookServer | null = null
 let frontendSocket: any = null
 let pendingTools = new Map<string, { resolve: (allowed: boolean) => void; toolUse: any }>()
@@ -98,13 +103,37 @@ function createClaudeOutputHandler(uiSessionId: string) {
   }
 }
 
-// Helper: Spawn Claude process for a session
-function spawnClaudeForSession(sessionId: string, resumeFrom?: string) {
+// Helper: Spawn Claude process for a session with user's token
+async function spawnClaudeForSession(sessionId: string, userId: string, authToken: string, resumeFrom?: string) {
   console.log(`[Boba Daemon] Spawning Claude for session ${sessionId}${resumeFrom ? ` (resuming ${resumeFrom})` : ''}`)
+
+  // Fetch user's Claude token from API
+  let claudeToken: string | undefined
+  try {
+    const response = await fetch(`${API_URL}/api/auth/claude-token`, {
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+      },
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      claudeToken = data.accessToken
+      console.log(`[Boba Daemon] Got Claude token for user ${userId}`)
+    } else {
+      console.log(`[Boba Daemon] No user token found, using system Claude auth (fallback)`)
+      claudeToken = undefined // Will use system ~/.claude auth
+    }
+  } catch (error) {
+    console.error(`[Boba Daemon] Failed to fetch token from API:`, error)
+    console.log(`[Boba Daemon] Using system Claude auth (fallback)`)
+    claudeToken = undefined
+  }
 
   const process = spawnClaude({
     hookPort: HOOK_PORT,
     resumeFrom,
+    claudeToken, // Pass user's token to spawner
     onOutput: createClaudeOutputHandler(sessionId),
     onExit: (code) => {
       console.log(`[Boba Daemon] Claude for session ${sessionId} exited with code ${code}`)
@@ -125,6 +154,7 @@ function spawnClaudeForSession(sessionId: string, resumeFrom?: string) {
   claudeSessions.set(sessionId, {
     process,
     claudeSessionId: resumeFrom || null,
+    userId,
   })
 }
 
@@ -161,9 +191,42 @@ async function main() {
   hookServer = new HookServer(HOOK_PORT)
   await hookServer.start()
 
-  // Handle frontend connections
-  io.on('connection', (socket) => {
-    console.log('[Boba Daemon] Frontend connected')
+  // Handle frontend connections with JWT auth
+  io.on('connection', async (socket) => {
+    console.log('[Boba Daemon] Frontend connecting...')
+
+    // Verify JWT token from handshake
+    const authToken = socket.handshake.auth?.token
+    if (!authToken) {
+      console.error('[Boba Daemon] No auth token provided')
+      socket.emit('error', { error: 'Authentication required' })
+      socket.disconnect()
+      return
+    }
+
+    // Verify token with API server
+    let userId: string
+    try {
+      const response = await fetch(`${API_URL}/api/auth/verify`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error('Invalid token')
+      }
+
+      const data = await response.json()
+      userId = data.userId
+      console.log(`[Boba Daemon] Authenticated user: ${userId}`)
+    } catch (error) {
+      console.error('[Boba Daemon] Authentication failed:', error)
+      socket.emit('error', { error: 'Invalid authentication token' })
+      socket.disconnect()
+      return
+    }
+
     frontendSocket = socket
 
     // Connect hook server to frontend socket for permissions
@@ -172,14 +235,19 @@ async function main() {
     }
 
     // Handle session creation
-    socket.on('create_session', (data: { sessionId: string; resumeFrom?: string }) => {
+    socket.on('create_session', async (data: { sessionId: string; resumeFrom?: string }) => {
       const { sessionId, resumeFrom } = data
 
       // Check if session already exists
       if (claudeSessions.has(sessionId)) {
-        console.log(`[Boba Daemon] Session ${sessionId} already exists, emitting session_ready`)
         const sessionInfo = claudeSessions.get(sessionId)
-        // Always emit session_ready so reconnecting frontend knows the session is alive
+        // Verify session belongs to this user
+        if (sessionInfo?.userId !== userId) {
+          socket.emit('error', { error: 'Unauthorized access to session' })
+          return
+        }
+
+        console.log(`[Boba Daemon] Session ${sessionId} already exists, emitting session_ready`)
         socket.emit('session_ready', {
           sessionId,
           claudeSessionId: sessionInfo?.claudeSessionId || null,
@@ -189,8 +257,8 @@ async function main() {
 
       console.log(`[Boba Daemon] Creating session: ${sessionId}${resumeFrom ? ` (resuming ${resumeFrom})` : ''}`)
 
-      // Spawn Claude process for this session
-      spawnClaudeForSession(sessionId, resumeFrom)
+      // Spawn Claude process for this session with user's token
+      await spawnClaudeForSession(sessionId, userId, authToken, resumeFrom)
     })
 
     // Handle session deletion
@@ -206,46 +274,60 @@ async function main() {
     })
 
     // Handle cancel - kill and respawn Claude process for the session
-    socket.on('cancel_session', (data: { sessionId: string }) => {
+    socket.on('cancel_session', async (data: { sessionId: string }) => {
       const { sessionId } = data
       console.log(`[Boba Daemon] Cancelling session: ${sessionId}`)
 
       const sessionInfo = claudeSessions.get(sessionId)
       if (sessionInfo) {
+        // Verify ownership
+        if (sessionInfo.userId !== userId) {
+          socket.emit('error', { error: 'Unauthorized access to session' })
+          return
+        }
+
         sessionInfo.process.kill('SIGTERM')
         claudeSessions.delete(sessionId)
       }
 
       // Respawn fresh Claude process for the session
-      spawnClaudeForSession(sessionId)
+      await spawnClaudeForSession(sessionId, userId, authToken)
 
       // Notify frontend that cancel was processed
       socket.emit('session_cancelled', { sessionId })
     })
 
     // Handle messages from frontend (with sessionId)
-    socket.on('message', (data: { sessionId: string; content: string }) => {
+    socket.on('message', async (data: { sessionId: string; content: string }) => {
       const { sessionId, content } = data
       console.log(`[Boba Daemon] Message for session ${sessionId}:`, content)
 
       // Auto-spawn if session doesn't exist (handles race conditions on reconnect)
       if (!claudeSessions.has(sessionId)) {
         console.log(`[Boba Daemon] Session ${sessionId} not found, auto-spawning...`)
-        spawnClaudeForSession(sessionId)
+        await spawnClaudeForSession(sessionId, userId, authToken)
       }
 
       const sessionInfo = claudeSessions.get(sessionId)
-      if (sessionInfo && sessionInfo.process.stdin) {
-        const message = JSON.stringify({
-          type: 'user',
-          message: {
-            role: 'user',
-            content
-          }
-        })
-        console.log(`[Boba Daemon] Writing to stdin for session ${sessionId}:`, message)
-        sessionInfo.process.stdin.write(message + '\n')
-        console.log(`[Boba Daemon] Message written to stdin`)
+      if (sessionInfo) {
+        // Verify ownership
+        if (sessionInfo.userId !== userId) {
+          socket.emit('error', { error: 'Unauthorized access to session' })
+          return
+        }
+
+        if (sessionInfo.process.stdin) {
+          const message = JSON.stringify({
+            type: 'user',
+            message: {
+              role: 'user',
+              content
+            }
+          })
+          console.log(`[Boba Daemon] Writing to stdin for session ${sessionId}:`, message)
+          sessionInfo.process.stdin.write(message + '\n')
+          console.log(`[Boba Daemon] Message written to stdin`)
+        }
       } else {
         console.error(`[Boba Daemon] No active process for session ${sessionId}`)
         socket.emit('error', {

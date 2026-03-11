@@ -1,186 +1,225 @@
-<div align="center">
-  <img src="./public/banner.png" alt="Boba Claude Banner" width="600"/>
-</div>
-
 # Boba Claude
 
-A multi-session web interface for Claude Code CLI, featuring persistent conversation history, real-time communication, and tool execution permission management.
-
-## Overview
-
-Boba Claude provides a browser-based interface to interact with multiple Claude Code CLI instances simultaneously. Each chat session spawns its own Claude CLI process, enabling parallel conversations with full tool usage capabilities and permission management through hooks.
-
-## Core Features
-
-- **Multi-Session Support**: Run multiple Claude CLI processes simultaneously, one per chat session
-- **Persistent Memory**: Full conversation history stored in browser localStorage
-- **Session Management**: Create, rename, delete, and switch between AI conversations
-- **Real-time Communication**: WebSocket-based bidirectional streaming with Socket.IO
-- **Tool Permission System**: Interactive permission requests via Claude Code hooks
-- **Per-Session Loading States**: Visual feedback isolated to each active session
-- **Character Themes**: Customizable boba character themes (black, orange, pink, gold)
+Multi-tenant web interface for Claude Code CLI with OAuth authentication and persistent chat history.
 
 ## Architecture
 
-### Technology Stack
+- **apps/web**: Next.js frontend with real-time chat interface
+- **apps/daemon**: WebSocket server that spawns and manages Claude CLI processes
+- **apps/api**: Fastify API server for authentication and user management
 
-**Frontend (Next.js 14+)**
-- React 18 with App Router
-- TypeScript for type safety
-- Tailwind CSS for responsive design
-- Zustand for state management with localStorage persistence
-- Socket.io client for real-time bidirectional communication
+## Features
 
-**Daemon (Node.js)**
-- Socket.io server for WebSocket connections
-- Multi-session process manager (Map<sessionId, ClaudeProcess>)
-- Claude CLI spawner with SDK mode (--input-format stream-json --output-format stream-json)
-- Hook server for permission requests
-
-**Permission System**
-- API server (Express) handling permission requests via hooks
-- PreToolUse hooks configured in Claude CLI settings
-- Interactive UI for approving/denying tool executions
-
-### Project Structure
-
-```
-boba-claude/
-├── apps/
-│   ├── web/              # Next.js frontend application
-│   │   ├── src/
-│   │   │   ├── app/      # Next.js app router (page.tsx)
-│   │   │   ├── components/ # UI components
-│   │   │   ├── hooks/    # useClaude.ts (Socket.IO + session management)
-│   │   │   └── lib/      # store.ts (Zustand state management)
-│   │   └── public/       # Static assets (boba character images)
-│   ├── daemon/           # Multi-session Claude CLI manager
-│   │   ├── src/
-│   │   │   ├── index.ts       # Socket.IO server + session router
-│   │   │   └── claude-spawner.ts # Claude CLI process spawner
-│   │   └── .claude/      # Claude CLI settings (hooks config)
-│   └── api/              # Permission server
-│       └── src/
-│           └── index.ts  # Express server for hook permission requests
-└── public/
-    └── assets/
-        └── branding/     # Boba character PNGs (black, orange, pink, gold)
-```
-
-### How It Works
-
-1. **Frontend → Daemon**: User sends message via Socket.IO to daemon
-2. **Daemon**: Routes message to corresponding Claude CLI process (one per session)
-3. **Claude CLI**: Processes message, triggers PreToolUse hook before each tool
-4. **Hook → API**: Hook sends permission request to API server via curl
-5. **API → Frontend**: Permission request forwarded to browser via Socket.IO
-6. **User Decision**: User approves/denies in UI
-7. **Permission Response**: Flows back through API → Hook → Claude CLI
-8. **Claude Response**: Sent back through Daemon → Frontend
-
-## Security Features
-
-- **Anthropic API Key**: Stored in environment variables, never exposed to frontend
-- **Interactive Permission System**: User must approve each tool execution via hooks
-- **Session Isolation**: Each chat runs in its own Claude CLI process
-- **localStorage Only**: No backend database, all data stored client-side
-- **Process Cleanup**: Daemon automatically kills Claude processes when sessions are deleted
+- Multi-user support with OAuth authentication
+- Each user connects their own Claude subscription
+- Persistent chat sessions with resume capability
+- Real-time communication via WebSocket
+- Tool permission management UI
+- Encrypted token storage
 
 ## Prerequisites
 
-- Node.js 20+
-- Claude Code CLI installed and authenticated (`claude auth login`)
-- npm or pnpm
+- Node.js >= 20.0.0
+- pnpm
+- PostgreSQL database
+- Claude CLI installed (`npm install -g @anthropic/claude-cli`)
+- Claude OAuth credentials (from Anthropic Console)
 
-## Environment Variables
+## Setup
 
-```env
-# Frontend (.env.local in apps/web/)
-NEXT_PUBLIC_WS_URL=http://localhost:3001  # Daemon WebSocket URL
-
-# Daemon (optional, uses defaults)
-DAEMON_PORT=3001                          # Socket.IO server port
-PERMISSION_SERVER_PORT=3002               # Permission hook server port
-
-# API (optional)
-API_PORT=4000                             # Permission server port
-```
-
-## Local Development
+### 1. Install dependencies
 
 ```bash
-# Install dependencies
-npm install
-
-# Terminal 1: Start permission API server
-cd apps/api && npm run dev
-
-# Terminal 2: Start daemon (Claude CLI manager)
-cd apps/daemon && npm run dev
-
-# Terminal 3: Start web frontend
-cd apps/web && npm run dev
-
-# Open browser at http://localhost:3000
+pnpm install
 ```
 
-### Development Workflow
+### 2. Set up PostgreSQL database
 
-1. Click "Connect to Claude" to establish WebSocket connection
-2. Create a new session (spawns a Claude CLI process)
-3. Send messages - Claude will request permissions via hooks
-4. Approve/deny each tool execution in the UI
-5. Switch between sessions to run multiple conversations
-6. Delete sessions to clean up Claude processes
+Create a PostgreSQL database:
 
-## Roadmap
+```bash
+createdb boba_claude
+```
 
-### ✅ Phase 1: Multi-Session Support (Complete)
-- Multi-session architecture with independent Claude CLI processes
-- Socket.IO bidirectional communication
-- Per-session loading states
-- Session lifecycle management (create, delete, switch)
-- localStorage persistence
+### 3. Configure environment variables
 
-### ✅ Phase 2: Permission System (Complete)
-- PreToolUse hooks integration
-- Interactive permission approval UI
-- Permission request forwarding via API server
-- Hook-based security layer
+#### API Server (`apps/api/.env`)
 
-### 🚧 Phase 3: UX Improvements (In Progress)
-- Cancel button for stuck loading states
-- Better error handling and user feedback
-- Session renaming functionality
-- Message search within sessions
+```bash
+cd apps/api
+cp .env.example .env
+```
 
-### 📋 Phase 4: Enhanced Features (Planned)
-- File upload support for Claude context
-- Code execution output display
-- Session export/import
-- Keyboard shortcuts
-- Mobile-responsive improvements
+Edit `.env` with your values:
 
-## Technical Notes
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/boba_claude"
+JWT_SECRET="your-secret-key-change-in-production"
+ENCRYPTION_KEY="your-32-byte-encryption-key-change-this"
+CLAUDE_CLIENT_ID="your-claude-oauth-client-id"
+CLAUDE_CLIENT_SECRET="your-claude-oauth-client-secret"
+CLAUDE_REDIRECT_URI="http://localhost:3002/api/auth/claude-callback"
+FRONTEND_URL="http://localhost:3000"
+PORT=3002
+```
 
-### Why Multi-Session?
-Each chat session spawns its own Claude CLI process to:
-- Enable parallel conversations without context mixing
-- Isolate tool permissions per session
-- Allow independent process management
-- Prevent session interference
+**Getting Claude OAuth Credentials:**
+1. Go to https://console.anthropic.com
+2. Navigate to your organization settings
+3. Create a new OAuth application
+4. Set redirect URI to `http://localhost:3002/api/auth/claude-callback`
+5. Copy Client ID and Client Secret to your `.env`
 
-### Why Hooks?
-Claude Code hooks provide:
-- Fine-grained control over tool execution
-- Interactive approval workflow
-- Security boundary between Claude and system
-- Flexibility to customize permission logic
+### 4. Run Prisma migrations
 
-## Contributing
+```bash
+cd apps/api
+pnpm prisma migrate dev --name init
+pnpm prisma generate
+```
 
-This is a private project for Mobula internal use. For questions or suggestions, contact the development team.
+### 5. Configure daemon
+
+The daemon will automatically connect to the API server. Make sure to set the API_URL if not using default:
+
+```bash
+# In apps/daemon/.env (optional)
+API_URL=http://localhost:3002
+```
+
+### 6. Configure frontend
+
+```bash
+# In apps/web/.env.local (optional)
+NEXT_PUBLIC_WS_URL=http://localhost:3001
+NEXT_PUBLIC_API_URL=http://localhost:3002
+```
+
+## Running the Application
+
+You can run all services at once from the root:
+
+```bash
+pnpm dev
+```
+
+Or run each service individually:
+
+```bash
+# Terminal 1 - API Server
+cd apps/api
+pnpm dev
+
+# Terminal 2 - Daemon
+cd apps/daemon
+pnpm dev
+
+# Terminal 3 - Frontend
+cd apps/web
+pnpm dev
+```
+
+The services will be available at:
+- Frontend: http://localhost:3000
+- Daemon: http://localhost:3001 (WebSocket)
+- API: http://localhost:3002
+
+## Usage
+
+### First Time Setup
+
+1. Open http://localhost:3000
+2. Click "Guest Login" to create an anonymous account
+3. Click "Connect Claude" to link your Claude subscription via OAuth
+4. A popup window will open - approve the OAuth request
+5. Once connected, you can start chatting with Claude
+
+### Creating Chat Sessions
+
+- Click "New Chat" to start a fresh conversation
+- Each chat session has its own Claude CLI process
+- Sessions persist across page refreshes
+
+### Resuming Sessions
+
+- Click "Resume Session" button
+- Paste a Claude session ID from `~/.claude/projects/`
+- The conversation history will be loaded automatically
+
+### Tool Permissions
+
+When Claude wants to use a tool (Read, Write, Bash, etc.), a permission modal will appear:
+- Click "Allow" to grant permission for that tool use
+- Click "Deny" to reject the tool use
+
+## Multi-User Architecture
+
+Each user:
+1. Creates an account (guest login or OAuth)
+2. Connects their own Claude subscription via OAuth
+3. Gets isolated chat sessions with their own Claude token
+4. Cannot access other users' sessions
+
+The daemon:
+- Authenticates WebSocket connections via JWT
+- Fetches user-specific Claude tokens from API
+- Spawns Claude CLI processes with user's token
+- Enforces session ownership
+
+## Development
+
+### Database Management
+
+```bash
+# Create new migration
+cd apps/api
+pnpm prisma migrate dev --name <migration_name>
+
+# Open Prisma Studio
+pnpm prisma studio
+
+# Reset database
+pnpm prisma migrate reset
+```
+
+### Building for Production
+
+```bash
+# Build all apps
+pnpm build
+
+# Start production servers
+pnpm start
+```
+
+## Security Notes
+
+- User tokens are encrypted at rest using AES-256-GCM
+- JWT tokens are used for session management
+- Each user's Claude processes are isolated
+- WebSocket connections require authentication
+- CORS is configured for security
+
+## Troubleshooting
+
+### "Authentication required" error
+- Make sure you've clicked "Guest Login" first
+- Check that the API server is running on port 3002
+
+### "No Claude account connected" error
+- Click "Connect Claude" and complete OAuth flow
+- Verify your Claude OAuth credentials in `apps/api/.env`
+
+### Sessions not loading
+- Check that daemon is running and accessible
+- Verify WebSocket connection in browser console
+- Ensure you're logged in with valid JWT token
+
+### Database connection errors
+- Verify PostgreSQL is running
+- Check DATABASE_URL in `apps/api/.env`
+- Run `pnpm prisma migrate dev` to apply migrations
 
 ## License
 
-Proprietary - All rights reserved
+MIT

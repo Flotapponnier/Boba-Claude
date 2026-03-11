@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 export interface ClaudeSpawnerOptions {
   hookPort: number
+  claudeToken?: string // User's Claude OAuth token
   cwd?: string
   resumeFrom?: string // Optional: Claude session ID to resume
   onOutput?: (data: string) => void
@@ -73,7 +74,7 @@ function loadSessionHistory(sessionId: string, projectCwd: string): any[] {
  * Spawn Claude CLI with hooks configuration
  */
 export function spawnClaude(options: ClaudeSpawnerOptions): ChildProcess {
-  const { hookPort, cwd = process.cwd(), resumeFrom, onOutput, onExit, onHistoryLoaded } = options
+  const { hookPort, claudeToken, cwd = process.cwd(), resumeFrom, onOutput, onExit, onHistoryLoaded } = options
 
   // Create .claude directory and settings.json with hooks config
   const claudeDir = join(cwd, '.claude')
@@ -120,9 +121,16 @@ export function spawnClaude(options: ClaudeSpawnerOptions): ChildProcess {
 
   console.log(`[ClaudeSpawner] Spawning: claude ${args.join(' ')}`)
 
+  // Set environment with user's Claude token if provided
+  const env = { ...process.env }
+  if (claudeToken) {
+    env.ANTHROPIC_API_KEY = claudeToken
+  }
+
   const child = spawn('claude', args, {
     cwd,
     stdio: ['pipe', 'pipe', 'inherit'], // pipe stdin/stdout for JSON communication
+    env,
   })
 
   // Don't send initial message - let first user message trigger system/init
