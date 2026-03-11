@@ -47,7 +47,17 @@ async function main() {
 
   // Register CORS
   await app.register(cors, {
-    origin: [process.env.FRONTEND_URL!, 'http://localhost:3000'],
+    origin: (origin, cb) => {
+      // Allow localhost, FRONTEND_URL, and Vercel deployments
+      if (!origin ||
+          origin === process.env.FRONTEND_URL ||
+          origin.includes('localhost') ||
+          origin.includes('vercel.app')) {
+        cb(null, true)
+      } else {
+        cb(new Error('Not allowed by CORS'), false)
+      }
+    },
     credentials: true,
   })
 
