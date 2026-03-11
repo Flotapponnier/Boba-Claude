@@ -106,6 +106,22 @@ export function useClaude() {
         setLoading(data.sessionId, false)
       })
 
+      // Session history loaded (for resumed sessions)
+      socket.on('session_history', (data: { sessionId: string; messages: any[] }) => {
+        console.log(`[Frontend] Loading ${data.messages.length} history messages for session ${data.sessionId}`)
+        const { currentSessionId } = useChatStore.getState()
+
+        // Only load history if this is the current session
+        if (data.sessionId === currentSessionId) {
+          data.messages.forEach((msg: any) => {
+            addMessage({
+              role: msg.role,
+              content: msg.content,
+            })
+          })
+        }
+      })
+
       // Claude messages (now includes sessionId)
       socket.on('claude_message', (data: ClaudeMessage) => {
         // Get current session ID from store directly (not from closure)
@@ -225,15 +241,15 @@ export function useClaude() {
   }
 
   // Create session - notify daemon to spawn Claude process
-  const createSession = useCallback((sessionId: string) => {
+  const createSession = useCallback((sessionId: string, resumeFrom?: string) => {
     if (!socketRef.current || !socketRef.current.connected) {
       console.error('[Frontend] Cannot create session - not connected')
       setError('Not connected to daemon')
       return
     }
 
-    console.log(`[Frontend] Creating session: ${sessionId}`)
-    socketRef.current.emit('create_session', { sessionId })
+    console.log(`[Frontend] Creating session: ${sessionId}${resumeFrom ? ` (resuming ${resumeFrom})` : ''}`)
+    socketRef.current.emit('create_session', { sessionId, resumeFrom })
   }, [])
 
   // Delete session - notify daemon to kill Claude process

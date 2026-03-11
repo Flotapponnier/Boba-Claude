@@ -1,21 +1,79 @@
 import { spawn, ChildProcess } from 'node:child_process'
-import { writeFileSync, mkdirSync } from 'node:fs'
+import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
-import { tmpdir } from 'node:os'
+import { tmpdir, homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 export interface ClaudeSpawnerOptions {
   hookPort: number
   cwd?: string
+  resumeFrom?: string // Optional: Claude session ID to resume
   onOutput?: (data: string) => void
   onExit?: (code: number | null) => void
+  onHistoryLoaded?: (messages: any[]) => void // Callback with loaded history
+}
+
+/**
+ * Load conversation history from Claude session file
+ */
+function loadSessionHistory(sessionId: string, projectCwd: string): any[] {
+  try {
+    // Convert project path to Claude's format: replace / with -
+    const projectPath = projectCwd.replace(/\//g, '-')
+    const sessionFile = join(homedir(), '.claude', 'projects', projectPath, `${sessionId}.jsonl`)
+
+    if (!existsSync(sessionFile)) {
+      console.log(`[ClaudeSpawner] No history file found: ${sessionFile}`)
+      return []
+    }
+
+    const content = readFileSync(sessionFile, 'utf-8')
+    const lines = content.trim().split('\n').filter(line => line.trim())
+
+    const messages: any[] = []
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line)
+        // Only include user and assistant messages (skip meta, summary, etc.)
+        if (entry.type === 'user' && !entry.isMeta) {
+          messages.push({
+            role: 'user',
+            content: entry.message.content,
+            timestamp: entry.timestamp
+          })
+        } else if (entry.type === 'assistant' && entry.message?.content) {
+          // Extract text from assistant message
+          const text = entry.message.content
+            .filter((c: any) => c.type === 'text')
+            .map((c: any) => c.text)
+            .join('')
+
+          if (text) {
+            messages.push({
+              role: 'assistant',
+              content: text,
+              timestamp: entry.timestamp
+            })
+          }
+        }
+      } catch (e) {
+        console.error('[ClaudeSpawner] Failed to parse history line:', e)
+      }
+    }
+
+    console.log(`[ClaudeSpawner] Loaded ${messages.length} messages from history`)
+    return messages
+  } catch (error) {
+    console.error('[ClaudeSpawner] Failed to load session history:', error)
+    return []
+  }
 }
 
 /**
  * Spawn Claude CLI with hooks configuration
  */
 export function spawnClaude(options: ClaudeSpawnerOptions): ChildProcess {
-  const { hookPort, cwd = process.cwd(), onOutput, onExit } = options
+  const { hookPort, cwd = process.cwd(), resumeFrom, onOutput, onExit, onHistoryLoaded } = options
 
   // Create .claude directory and settings.json with hooks config
   const claudeDir = join(cwd, '.claude')
@@ -47,6 +105,19 @@ export function spawnClaude(options: ClaudeSpawnerOptions): ChildProcess {
     '--input-format', 'stream-json',
     '--verbose',
   ]
+
+  // Add --resume flag if resuming from existing session
+  if (resumeFrom) {
+    args.push('--resume', resumeFrom)
+    console.log(`[ClaudeSpawner] Resuming Claude session: ${resumeFrom}`)
+
+    // Load history from session file
+    if (onHistoryLoaded) {
+      const history = loadSessionHistory(resumeFrom, cwd)
+      onHistoryLoaded(history)
+    }
+  }
+
   console.log(`[ClaudeSpawner] Spawning: claude ${args.join(' ')}`)
 
   const child = spawn('claude', args, {

@@ -39,6 +39,7 @@ interface ChatSession {
   createdAt: Date
   updatedAt: Date
   isLoading: boolean
+  claudeSessionId?: string // Optional: ID of resumed Claude session
 }
 
 interface ChatStore {
@@ -51,6 +52,7 @@ interface ChatStore {
   switchSession: (sessionId: string) => void
   deleteSession: (sessionId: string) => void
   renameSession: (sessionId: string, title: string) => void
+  setClaudeSessionId: (sessionId: string, claudeId: string) => void
 
   // Connection state
   setWasConnected: (connected: boolean) => void
@@ -116,6 +118,24 @@ export const useChatStore = create<ChatStore>()(
               [sessionId]: {
                 ...session,
                 title,
+                updatedAt: new Date(),
+              },
+            },
+          }
+        })
+      },
+
+      setClaudeSessionId: (sessionId: string, claudeId: string) => {
+        set((state) => {
+          const session = state.sessions[sessionId]
+          if (!session) return state
+
+          return {
+            sessions: {
+              ...state.sessions,
+              [sessionId]: {
+                ...session,
+                claudeSessionId: claudeId,
                 updatedAt: new Date(),
               },
             },

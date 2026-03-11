@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useChatStore, useBobaStore } from '@/lib/store'
 import { useClaude } from '@/hooks/useClaude'
 import Image from 'next/image'
-import { Settings, Send, MessageSquare, Clock, Plug, PlugZap, Wrench, Trash2, Pencil, X } from 'lucide-react'
+import { Settings, Send, MessageSquare, Clock, Plug, PlugZap, Wrench, Trash2, Pencil, X, RotateCcw } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -18,6 +18,7 @@ const CHARACTER_IMAGES = {
 export default function HomePage() {
   const [mounted, setMounted] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showResumeModal, setShowResumeModal] = useState(false)
   const [input, setInput] = useState('')
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
@@ -30,6 +31,7 @@ export default function HomePage() {
     switchSession,
     deleteSession,
     renameSession,
+    setClaudeSessionId,
   } = useChatStore()
   const { character } = useBobaStore()
   const { isConnected, isConnecting, error, permissionRequest, connectClaude, disconnect, sendMessage, respondToPermission, createSession: createClaudeSession, deleteSession: deleteClaudeSession, cancelSession } = useClaude()
@@ -105,6 +107,21 @@ export default function HomePage() {
     }
     setEditingSessionId(null)
     setEditingTitle('')
+  }
+
+  const handleResumeSession = (claudeSessionId: string) => {
+    const sessionId = createSession()
+
+    // Store Claude session ID in the session
+    setClaudeSessionId(sessionId, claudeSessionId)
+
+    // Notify daemon to spawn Claude with --resume
+    if (isConnected && sessionId) {
+      createClaudeSession(sessionId, claudeSessionId)
+      setActiveClaudeSessions(prev => new Set(prev).add(sessionId))
+    }
+
+    setShowResumeModal(false)
   }
 
   if (!mounted) {
@@ -202,6 +219,15 @@ export default function HomePage() {
           >
             <MessageSquare size={20} />
             <span>New Chat</span>
+          </button>
+
+          <button
+            onClick={() => setShowResumeModal(true)}
+            className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-opacity-10 hover:bg-black transition-colors"
+            style={{ color: character === 'black' ? '#000000' : 'var(--text-primary)' }}
+          >
+            <RotateCcw size={20} />
+            <span>Resume Session</span>
           </button>
 
           <div className="pt-4">
@@ -305,6 +331,14 @@ export default function HomePage() {
           {/* Settings Modal */}
         {showSettings && (
           <SettingsModal onClose={() => setShowSettings(false)} />
+        )}
+
+        {/* Resume Session Modal */}
+        {showResumeModal && (
+          <ResumeSessionModal
+            onClose={() => setShowResumeModal(false)}
+            onResume={handleResumeSession}
+          />
         )}
 
         {/* Permission Modal */}
@@ -550,6 +584,75 @@ function PermissionModal({ toolName, input, onAllow, onDeny }: {
             style={{ backgroundColor: '#10b981', color: '#ffffff' }}
           >
             Allow
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ResumeSessionModal({ onClose, onResume }: {
+  onClose: () => void
+  onResume: (claudeSessionId: string) => void
+}) {
+  const [input, setInput] = useState('')
+
+  return (
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="rounded-2xl p-6 max-w-md w-full"
+        style={{ backgroundColor: '#ffffff' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-2xl font-bold mb-4" style={{ color: '#000000' }}>
+          Resume Claude Session
+        </h2>
+
+        <p className="text-sm mb-4" style={{ color: '#666666' }}>
+          Enter the Claude session ID from your terminal or VSCode to continue the conversation.
+        </p>
+
+        <input
+          type="text"
+          placeholder="Paste session ID (e.g., f3e8a9b2-4c1d-4e7f...)"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyPress={(e) => {
+            if (e.key === 'Enter' && input.trim()) {
+              onResume(input.trim())
+            }
+          }}
+          className="w-full p-3 rounded-xl mb-4 outline-none font-mono text-sm"
+          style={{
+            backgroundColor: '#f5f5f5',
+            color: '#000000',
+            border: '1px solid #e0e0e0'
+          }}
+          autoFocus
+        />
+
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 rounded-xl font-medium"
+            style={{ backgroundColor: '#e0e0e0', color: '#000000' }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              if (input.trim()) {
+                onResume(input.trim())
+              }
+            }}
+            disabled={!input.trim()}
+            className="flex-1 py-3 rounded-xl font-medium disabled:opacity-50"
+            style={{ backgroundColor: '#10b981', color: '#ffffff' }}
+          >
+            Resume
           </button>
         </div>
       </div>

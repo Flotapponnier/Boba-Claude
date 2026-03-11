@@ -99,11 +99,12 @@ function createClaudeOutputHandler(uiSessionId: string) {
 }
 
 // Helper: Spawn Claude process for a session
-function spawnClaudeForSession(sessionId: string) {
-  console.log(`[Boba Daemon] Spawning Claude for session ${sessionId}`)
+function spawnClaudeForSession(sessionId: string, resumeFrom?: string) {
+  console.log(`[Boba Daemon] Spawning Claude for session ${sessionId}${resumeFrom ? ` (resuming ${resumeFrom})` : ''}`)
 
   const process = spawnClaude({
     hookPort: HOOK_PORT,
+    resumeFrom,
     onOutput: createClaudeOutputHandler(sessionId),
     onExit: (code) => {
       console.log(`[Boba Daemon] Claude for session ${sessionId} exited with code ${code}`)
@@ -112,11 +113,18 @@ function spawnClaudeForSession(sessionId: string) {
       // Notify frontend via current socket
       frontendSocket?.emit('session_ended', { sessionId, code })
     },
+    onHistoryLoaded: (messages) => {
+      console.log(`[Boba Daemon] Sending ${messages.length} history messages to frontend for session ${sessionId}`)
+      frontendSocket?.emit('session_history', {
+        sessionId,
+        messages,
+      })
+    },
   })
 
   claudeSessions.set(sessionId, {
     process,
-    claudeSessionId: null,
+    claudeSessionId: resumeFrom || null,
   })
 }
 
@@ -164,8 +172,8 @@ async function main() {
     }
 
     // Handle session creation
-    socket.on('create_session', (data: { sessionId: string }) => {
-      const { sessionId } = data
+    socket.on('create_session', (data: { sessionId: string; resumeFrom?: string }) => {
+      const { sessionId, resumeFrom } = data
 
       // Check if session already exists
       if (claudeSessions.has(sessionId)) {
@@ -179,10 +187,10 @@ async function main() {
         return
       }
 
-      console.log(`[Boba Daemon] Creating session: ${sessionId}`)
+      console.log(`[Boba Daemon] Creating session: ${sessionId}${resumeFrom ? ` (resuming ${resumeFrom})` : ''}`)
 
       // Spawn Claude process for this session
-      spawnClaudeForSession(sessionId)
+      spawnClaudeForSession(sessionId, resumeFrom)
     })
 
     // Handle session deletion
