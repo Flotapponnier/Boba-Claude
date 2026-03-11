@@ -38,15 +38,7 @@ if (missingOAuth.length > 0) {
 
 async function main() {
   const app = Fastify({
-    logger: {
-      transport: {
-        target: 'pino-pretty',
-        options: {
-          translateTime: 'HH:MM:ss Z',
-          ignore: 'pid,hostname',
-        },
-      },
-    },
+    logger: true,
   })
 
   // Initialize Prisma

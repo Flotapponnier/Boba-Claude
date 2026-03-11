@@ -21,12 +21,6 @@ export async function sessionRoutes(app: FastifyInstance) {
   // Create new session
   app.post('/sessions', {
     preHandler: authenticate,
-    schema: {
-      body: z.object({
-        title: z.string().optional(),
-        claudeSessionId: z.string().optional(),
-      }),
-    },
   }, async (request, reply) => {
     const { userId } = request as AuthenticatedRequest
     const { title, claudeSessionId } = request.body as any
@@ -45,15 +39,6 @@ export async function sessionRoutes(app: FastifyInstance) {
   // Update session
   app.patch('/sessions/:id', {
     preHandler: authenticate,
-    schema: {
-      params: z.object({
-        id: z.string(),
-      }),
-      body: z.object({
-        title: z.string().optional(),
-        claudeSessionId: z.string().optional(),
-      }),
-    },
   }, async (request, reply) => {
     const { userId } = request as AuthenticatedRequest
     const { id } = request.params as any
@@ -79,11 +64,6 @@ export async function sessionRoutes(app: FastifyInstance) {
   // Delete session
   app.delete('/sessions/:id', {
     preHandler: authenticate,
-    schema: {
-      params: z.object({
-        id: z.string(),
-      }),
-    },
   }, async (request, reply) => {
     const { userId } = request as AuthenticatedRequest
     const { id } = request.params as any

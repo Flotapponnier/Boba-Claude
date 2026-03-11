@@ -6,7 +6,7 @@ import { ChildProcess } from 'node:child_process'
 import { HookServer } from './hook-server.js'
 
 const WS_PORT = 3001
-const HOOK_PORT = 3002
+const HOOK_PORT = 3003 // Changed from 3002 to avoid conflict with API
 const API_URL = process.env.API_URL || 'http://localhost:3002'
 
 // Multi-session management: Map sessionId -> { process, userId, claudeSessionId }
