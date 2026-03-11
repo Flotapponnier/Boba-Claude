@@ -45,24 +45,31 @@ export async function authRoutes(app: FastifyInstance) {
     preHandler: authenticate,
   }, async (request, reply) => {
     // Check if OAuth is configured
-    if (!process.env.CLAUDE_CLIENT_ID || !process.env.CLAUDE_CLIENT_SECRET) {
+    if (!process.env.CLAUDE_CLIENT_ID) {
       return reply.status(501).send({
         error: 'OAuth not configured',
-        message: 'Set CLAUDE_CLIENT_ID and CLAUDE_CLIENT_SECRET in .env to enable OAuth'
+        message: 'Set CLAUDE_CLIENT_ID in .env to enable OAuth'
       })
     }
 
     const { userId } = request as AuthenticatedRequest
 
-    // Create state parameter with userId
-    const state: ClaudeOAuthState = { userId }
+    // Generate PKCE codes
+    const { randomBytes, createHash } = await import('crypto')
+    const verifier = randomBytes(32).toString('base64url')
+    const challenge = createHash('sha256').update(verifier).digest('base64url')
+
+    // Create state parameter with userId + verifier
+    const state: ClaudeOAuthState = { userId, verifier }
     const stateToken = app.jwt.sign(state, { expiresIn: '10m' })
 
     const params = new URLSearchParams({
       client_id: process.env.CLAUDE_CLIENT_ID!,
       redirect_uri: process.env.CLAUDE_REDIRECT_URI!,
       response_type: 'code',
-      scope: 'offline_access', // Request refresh token
+      scope: 'user:inference',
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
       state: stateToken,
     })
 
@@ -88,18 +95,19 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Invalid state parameter' })
     }
 
-    // Exchange code for tokens
+    // Exchange code for tokens with PKCE
     const tokenResponse = await fetch(CLAUDE_TOKEN_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Type': 'application/json',
       },
-      body: new URLSearchParams({
+      body: JSON.stringify({
         grant_type: 'authorization_code',
         code,
         client_id: process.env.CLAUDE_CLIENT_ID!,
-        client_secret: process.env.CLAUDE_CLIENT_SECRET!,
         redirect_uri: process.env.CLAUDE_REDIRECT_URI!,
+        code_verifier: stateData.verifier,
+        state: state,
       }),
     })
 

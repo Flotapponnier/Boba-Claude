@@ -14,5 +14,6 @@ export interface ClaudeOAuthTokenResponse {
 
 export interface ClaudeOAuthState {
   userId: string
+  verifier?: string
   redirect?: string
 }

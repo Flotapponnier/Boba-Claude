@@ -53,6 +53,48 @@ export default function HomePage() {
     }
   }
 
+  // Connect Claude OAuth
+  const [claudeConnected, setClaudeConnected] = useState(false)
+  const handleConnectClaude = async () => {
+    if (!authToken) return
+    try {
+      const response = await fetch('http://localhost:3002/api/auth/claude-login', {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      })
+      const { authUrl } = await response.json()
+      window.open(authUrl, '_blank', 'width=600,height=700')
+    } catch (err) {
+      console.error('Failed to initiate OAuth:', err)
+    }
+  }
+
+  // Check Claude connection status
+  useEffect(() => {
+    if (!authToken) return
+    const checkStatus = async () => {
+      try {
+        const response = await fetch('http://localhost:3002/api/auth/claude-status', {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        })
+        const { connected } = await response.json()
+        setClaudeConnected(connected)
+      } catch (err) {
+        console.error('Failed to check Claude status:', err)
+      }
+    }
+    checkStatus()
+  }, [authToken])
+
+  // Detect OAuth callback success
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('auth') === 'success') {
+      setClaudeConnected(true)
+      // Clean URL
+      window.history.replaceState({}, '', '/')
+    }
+  }, [])
+
   const currentSession = currentSessionId ? sessionsObj[currentSessionId] : null
   const messages = currentSession?.messages || []
   const isLoading = currentSession?.isLoading || false
@@ -190,14 +232,33 @@ export default function HomePage() {
                 <span className="text-sm font-medium">Guest Login</span>
               </button>
             ) : (
-              <button
-                onClick={logout}
-                className="w-full flex items-center gap-2 justify-center p-2 rounded-lg transition-all hover:scale-105"
-                style={{ backgroundColor: '#6b7280', color: '#ffffff' }}
-              >
-                <LogOut size={16} />
-                <span className="text-sm font-medium">Logout</span>
-              </button>
+              <>
+                {/* Connect Claude OAuth */}
+                {!claudeConnected ? (
+                  <button
+                    onClick={handleConnectClaude}
+                    className="w-full flex items-center gap-2 justify-center p-2 rounded-lg transition-all hover:scale-105"
+                    style={{ backgroundColor: '#10b981', color: '#ffffff' }}
+                  >
+                    <Plug size={16} />
+                    <span className="text-sm font-medium">Connect Claude</span>
+                  </button>
+                ) : (
+                  <div className="w-full flex items-center gap-2 justify-center p-2 rounded-lg" style={{ backgroundColor: '#10b981', color: '#ffffff' }}>
+                    <PlugZap size={16} />
+                    <span className="text-sm font-medium">Claude Connected</span>
+                  </div>
+                )}
+
+                <button
+                  onClick={logout}
+                  className="w-full flex items-center gap-2 justify-center p-2 rounded-lg transition-all hover:scale-105"
+                  style={{ backgroundColor: '#6b7280', color: '#ffffff' }}
+                >
+                  <LogOut size={16} />
+                  <span className="text-sm font-medium">Logout</span>
+                </button>
+              </>
             )}
 
             <div className="flex items-center gap-2 justify-center">
