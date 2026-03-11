@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useChatStore, useBobaStore } from '@/lib/store'
 import { useClaude } from '@/hooks/useClaude'
+import { AuthButton } from '@/components/AuthButton'
 import Image from 'next/image'
 import { Settings, Send, MessageSquare, Clock, Plug, PlugZap, Wrench, Trash2, Pencil, X, RotateCcw } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
@@ -159,8 +160,12 @@ export default function HomePage() {
               priority
             />
           </div>
-          {/* Connection Status & Button */}
+
+          {/* Auth & Connection Status */}
           <div className="space-y-3">
+            {/* Auth Button (Guest Login / Logout / Claude OAuth) */}
+            <AuthButton />
+
             <div className="flex items-center gap-2 justify-center">
               <div
                 className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
@@ -196,7 +201,7 @@ export default function HomePage() {
               ) : (
                 <>
                   <Plug size={16} />
-                  <span className="text-sm font-medium">Connect Claude</span>
+                  <span className="text-sm font-medium">Connect Daemon</span>
                 </>
               )}
             </button>
