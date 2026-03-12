@@ -115,6 +115,42 @@ curl -X POST http://localhost:3002/api/workspaces \
   }'
 ```
 
+## Daemon Modes
+
+Boba Claude supports **2 execution modes**:
+
+### 🔌 SSH Mode (Default)
+
+Connect to Claude running on a **remote machine** via SSH:
+
+```bash
+cd apps/daemon
+bun dev  # SSH mode
+```
+
+**Use cases:**
+- Claude on a VPS or dedicated server
+- Coder workspace on remote machine
+- Multiple remote workspaces
+
+### 🏠 Local Mode (Like Happy CLI)
+
+Spawn Claude **locally** on the same machine as the daemon:
+
+```bash
+cd apps/daemon
+bun run dev:local  # Local mode
+```
+
+**Use cases:**
+- Development on Coder (daemon + Claude in same workspace)
+- Local development with mobile/web access
+- Expose local Claude via ngrok/Coder port forwarding
+
+**Requirements:**
+- Claude CLI installed: `npm install -g @anthropic/claude`
+- Claude in PATH or at `/usr/local/bin/claude`
+
 ## How It Works
 
 ### Session Persistence
@@ -127,20 +163,21 @@ curl -X POST http://localhost:3002/api/workspaces \
 
 1. **Create Session:**
    - Frontend creates unique session ID
-   - Daemon establishes SSH connection
-   - Verifies Claude CLI exists on remote machine
+   - **SSH Mode:** Daemon establishes SSH connection to remote machine
+   - **Local Mode:** Daemon verifies Claude CLI is installed locally
    - Saves session to DB
 
 2. **Send Message:**
    - Frontend sends message with sessionId
    - Daemon builds full conversation context
-   - Executes via SSH: `echo "<context>" | claude -p`
+   - **SSH Mode:** Executes via SSH: `ssh user@host "echo '<context>' | claude -p"`
+   - **Local Mode:** Executes locally: `echo '<context>' | claude -p`
    - Saves both user message and assistant response to DB
    - Returns response to frontend
 
 3. **Multi-Session Support:**
    - Daemon manages multiple sessions in parallel
-   - Each session has independent SSH connection
+   - Each session has independent executor (SSH or Local)
    - Messages routed by sessionId
    - Switch between sessions without losing context
 

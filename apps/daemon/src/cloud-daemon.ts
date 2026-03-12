@@ -1,16 +1,22 @@
 #!/usr/bin/env node
 /**
- * Cloud Daemon - Centralized daemon that manages Claude sessions via SSH
- * This daemon runs on the VPS and connects to user's remote machines via SSH
+ * Cloud Daemon - Manages Claude sessions via SSH or locally
+ * Modes:
+ * - SSH Mode (default): Connects to remote machines via SSH
+ * - Local Mode: Spawns Claude CLI locally (like Happy CLI)
+ *
+ * Set LOCAL_MODE=true to enable local mode
  */
 import { Server as SocketServer, Socket } from 'socket.io'
 import { createServer } from 'node:http'
 import { spawn, ChildProcess } from 'node:child_process'
 import { SSHExecutor, SSHConfig } from './ssh-executor.js'
+import { LocalExecutor } from './local-executor.js'
 import { PrismaClient } from '@prisma/client'
 
 const WS_PORT = 3001
 const API_URL = process.env.API_URL || 'http://localhost:3002'
+const LOCAL_MODE = process.env.LOCAL_MODE === 'true'
 
 // Initialize Prisma
 const prisma = new PrismaClient()
@@ -18,11 +24,12 @@ const prisma = new PrismaClient()
 interface SessionInfo {
   sessionId: string
   userId: string
-  sshExecutor: SSHExecutor
-  sshConfig: SSHConfig
+  executor: SSHExecutor | LocalExecutor
+  execConfig: SSHConfig | { workingDir: string; claudePath?: string }
   claudePath: string
   workspaceId: string
   messageHistory: Array<{ role: 'user' | 'assistant'; content: string }>
+  isLocal: boolean
 }
 
 // Active sessions: sessionId -> SessionInfo
@@ -32,6 +39,14 @@ const activeSessions = new Map<string, SessionInfo>()
 const userConnections = new Map<string, string>()
 
 async function fetchWorkspace(userId: string, workspaceId?: string) {
+  if (LOCAL_MODE) {
+    // Local mode: use current working directory
+    return {
+      workingDir: process.cwd(),
+      isLocal: true,
+    }
+  }
+
   const response = await fetch(`${API_URL}/api/workspaces/${userId}/active`, {
     headers: {
       'Content-Type': 'application/json',
@@ -51,10 +66,61 @@ async function spawnClaudeSession(
   workspaceId: string,
   frontendSocket: Socket
 ): Promise<void> {
-  console.log(`[Cloud Daemon] Spawning Claude session ${sessionId} for user ${userId}`)
+  console.log(`[Cloud Daemon] Spawning Claude session ${sessionId} for user ${userId} (mode: ${LOCAL_MODE ? 'LOCAL' : 'SSH'})`)
 
-  // Fetch workspace config from API
+  // Fetch workspace config from API or use local
   const workspace = await fetchWorkspace(userId, workspaceId)
+
+  if (LOCAL_MODE || workspace.isLocal) {
+    // LOCAL MODE: Spawn Claude directly
+    console.log('[Cloud Daemon] Using LOCAL mode (spawning Claude locally)')
+
+    const localExecutor = new LocalExecutor({
+      workingDir: workspace.workingDir || process.cwd(),
+      claudePath: workspace.claudePath,
+    })
+
+    await localExecutor.connect()
+
+    // Try to find Claude in common paths
+    const claudePaths = ['claude', '/usr/local/bin/claude', '/usr/bin/claude', process.env.HOME + '/.local/bin/claude']
+    let claudePath: string | null = null
+
+    for (const path of claudePaths) {
+      if (await localExecutor.fileExists(path) || path === 'claude') {
+        claudePath = path
+        console.log(`[Cloud Daemon] Found Claude at: ${path}`)
+        break
+      }
+    }
+
+    if (!claudePath) {
+      frontendSocket.emit('error', {
+        sessionId,
+        error: `Claude CLI not found. Install with: npm install -g @anthropic/claude`,
+      })
+      await localExecutor.disconnect()
+      return
+    }
+
+    // Store session info
+    activeSessions.set(sessionId, {
+      sessionId,
+      userId,
+      executor: localExecutor,
+      execConfig: { workingDir: workspace.workingDir || process.cwd(), claudePath },
+      claudePath,
+      workspaceId,
+      messageHistory: [],
+      isLocal: true,
+    })
+
+    frontendSocket.emit('session_ready', { sessionId })
+    return
+  }
+
+  // SSH MODE: Connect to remote machine
+  console.log('[Cloud Daemon] Using SSH mode (connecting to remote machine)')
 
   // Load SSH private key if no password
   let privateKey: Buffer | undefined
@@ -125,18 +191,19 @@ async function spawnClaudeSession(
   activeSessions.set(sessionId, {
     sessionId,
     userId,
-    sshExecutor,
-    sshConfig,
+    executor: sshExecutor,
+    execConfig: sshConfig,
     claudePath,
     workspaceId,
     messageHistory: [],
+    isLocal: false,
   })
 
   frontendSocket.emit('session_ready', { sessionId })
 }
 
 async function main() {
-  console.log('[Cloud Daemon] Starting centralized cloud daemon...')
+  console.log(`[Cloud Daemon] Starting daemon in ${LOCAL_MODE ? 'LOCAL' : 'SSH'} mode...`)
 
   const httpServer = createServer()
 
@@ -300,7 +367,7 @@ async function main() {
         return
       }
 
-      console.log(`[Cloud Daemon] Executing Claude command via SSH`)
+      console.log(`[Cloud Daemon] Executing Claude command (${session.isLocal ? 'LOCAL' : 'SSH'})`)
 
       // Add user message to history
       session.messageHistory.push({ role: 'user', content: data.content })
@@ -314,15 +381,19 @@ async function main() {
         },
       })
 
-      // Execute claude with -p flag (print mode) via SSH
+      // Execute claude with -p flag (print mode)
       // Build full conversation context
       const conversationContext = session.messageHistory
         .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
         .join('\n\n') + '\n\nAssistant:'
 
       try {
-        const command = `cd ${session.sshConfig.workingDir} && echo "${conversationContext.replace(/"/g, '\\"')}" | ${session.claudePath} -p`
-        const result = await session.sshExecutor.executeCommand(command)
+        const workingDir = session.isLocal
+          ? (session.execConfig as { workingDir: string }).workingDir
+          : (session.execConfig as SSHConfig).workingDir
+
+        const command = `cd ${workingDir} && echo "${conversationContext.replace(/"/g, '\\"')}" | ${session.claudePath} -p`
+        const result = await session.executor.executeCommand(command)
 
         console.log(`[Claude ${session.sessionId}] stdout:`, result.stdout)
 
@@ -358,12 +429,6 @@ async function main() {
         if (result.stderr) {
           console.error(`[Claude ${session.sessionId}] stderr:`, result.stderr)
         }
-
-        // Don't end session - keep it alive for continuation
-        // socket.emit('session_ended', {
-        //   sessionId: data.sessionId,
-        //   code: 0
-        // })
       } catch (error: any) {
         console.error(`[Cloud Daemon] Failed to execute Claude command:`, error)
         socket.emit('error', {
@@ -373,7 +438,7 @@ async function main() {
       }
     })
 
-    // Cancel session (no-op for now, as each message is one-shot)
+    // Cancel session
     socket.on('cancel_session', (data: { sessionId: string }) => {
       socket.emit('session_cancelled', { sessionId: data.sessionId })
     })
@@ -382,8 +447,8 @@ async function main() {
     socket.on('delete_session', async (data: { sessionId: string }) => {
       const session = activeSessions.get(data.sessionId)
       if (session) {
-        if (session.sshExecutor) {
-          await session.sshExecutor.disconnect()
+        if (session.executor) {
+          await session.executor.disconnect()
         }
         activeSessions.delete(data.sessionId)
         socket.emit('session_ended', { sessionId: data.sessionId, code: 0 })
@@ -397,8 +462,9 @@ async function main() {
   })
 
   httpServer.listen(WS_PORT, () => {
-    console.log(`[Cloud Daemon] Cloud daemon listening on port ${WS_PORT}`)
-    console.log('[Cloud Daemon] Ready to manage Claude sessions via SSH')
+    console.log(`[Cloud Daemon] Daemon listening on port ${WS_PORT}`)
+    console.log(`[Cloud Daemon] Mode: ${LOCAL_MODE ? 'LOCAL (spawning Claude locally)' : 'SSH (connecting to remote machines)'}`)
+    console.log('[Cloud Daemon] Ready to manage Claude sessions')
   })
 
   process.on('SIGINT', async () => {
@@ -407,8 +473,8 @@ async function main() {
     // Kill all active sessions
     for (const [sessionId, session] of activeSessions) {
       console.log(`[Cloud Daemon] Closing session ${sessionId}`)
-      if (session.sshExecutor) {
-        await session.sshExecutor.disconnect()
+      if (session.executor) {
+        await session.executor.disconnect()
       }
     }
 
