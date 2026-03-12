@@ -1,101 +1,157 @@
 #!/usr/bin/env node
+import { program } from 'commander'
+import { spawn } from 'child_process'
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
+import { homedir } from 'os'
+import { join } from 'path'
+import open from 'open'
 
-import chalk from 'chalk'
-import { startDaemon, stopDaemon, getDaemonStatus } from './daemon/daemon.js'
-import { login, logout, getStoredToken } from './commands/auth.js'
-import { initCommand } from './commands/init.js'
-import { chatCommand } from './commands/chat.js'
+const CONFIG_DIR = join(homedir(), '.boba')
+const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
+const API_URL = process.env.BOBA_API_URL || 'http://localhost:3002'
+const RELAY_URL = process.env.BOBA_RELAY_URL || 'http://localhost:3001'
+const WEB_URL = process.env.BOBA_WEB_URL || 'http://localhost:3000'
 
-const args = process.argv.slice(2)
-const command = args[0]
-
-async function main() {
-  if (command === 'login') {
-    console.log(chalk.blue('🔐 Logging in to Boba Claude...'))
-    await login()
-    console.log(chalk.green('✓ Login successful!'))
-    console.log(chalk.gray('\nNext: Run `boba start` to launch the local daemon'))
-    return
-  }
-
-  if (command === 'logout') {
-    await logout()
-    console.log(chalk.green('✓ Logged out'))
-    return
-  }
-
-  if (command === 'init') {
-    await initCommand()
-    return
-  }
-
-  if (command === 'chat') {
-    const message = args.slice(1).join(' ')
-    if (!message) {
-      console.error(chalk.red('❌ Please provide a message'))
-      console.log(chalk.gray('Example: boba chat "build a todo app"'))
-      process.exit(1)
-    }
-    await chatCommand(message)
-    return
-  }
-
-  if (command === 'start') {
-    const token = await getStoredToken()
-    if (!token) {
-      console.log(chalk.red('✗ Not authenticated. Run `boba login` first.'))
-      process.exit(1)
-    }
-
-    console.log(chalk.blue('🚀 Starting Boba daemon...'))
-    await startDaemon(token)
-    return
-  }
-
-  if (command === 'stop') {
-    console.log(chalk.blue('🛑 Stopping Boba daemon...'))
-    await stopDaemon()
-    console.log(chalk.green('✓ Daemon stopped'))
-    return
-  }
-
-  if (command === 'status') {
-    const status = await getDaemonStatus()
-    if (status.running) {
-      console.log(chalk.green('✓ Daemon is running'))
-      console.log(chalk.gray(`  PID: ${status.pid}`))
-      console.log(chalk.gray(`  Port: ${status.port}`))
-    } else {
-      console.log(chalk.yellow('⚠ Daemon is not running'))
-    }
-    return
-  }
-
-  // Show help
-  console.log(`
-${chalk.bold('boba')} - Claude Code On the Go
-
-${chalk.bold('Usage:')}
-  boba login              Authenticate with Boba Cloud
-  boba init               Configure SSH workspace (for cloud mode)
-  boba chat "message"     Send a message to Claude (cloud mode)
-  boba start              Start local daemon (connects your machine)
-  boba stop               Stop local daemon
-  boba status             Check daemon status
-  boba logout             Logout
-
-${chalk.bold('Examples:')}
-  boba login                        # Login first
-  boba init                         # Configure your remote workspace via SSH
-  boba chat "build a todo app"      # Chat with Claude (cloud mode)
-  boba start                        # Start daemon to expose your workspace (local mode)
-
-${chalk.gray('Cloud mode: Configure SSH workspace with `boba init`')}
-${chalk.gray('Local mode: Your Claude CLI runs on your machine')}
-`)
+interface Config {
+  token?: string
+  userId?: string
 }
 
-main().catch((error) => {
-  console.error(chalk.red('Error:'), error.message)
-  process.exit(1)
-})
+function getConfig(): Config {
+  if (!existsSync(CONFIG_FILE)) {
+    return {}
+  }
+  return JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'))
+}
+
+function saveConfig(config: Config) {
+  if (!existsSync(CONFIG_DIR)) {
+    mkdirSync(CONFIG_DIR, { recursive: true })
+  }
+  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2))
+}
+
+async function guestLogin(): Promise<string> {
+  const response = await fetch(`${API_URL}/api/auth/guest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  })
+
+  if (!response.ok) {
+    throw new Error('Failed to login as guest')
+  }
+
+  const data = await response.json() as { token: string }
+  return data.token
+}
+
+program
+  .name('boba')
+  .description('Boba Claude CLI - Run Claude in your workspace')
+  .version('0.1.0')
+
+program
+  .command('login')
+  .description('Login and save your credentials')
+  .action(async () => {
+    console.log('🔐 Logging in as guest...')
+
+    try {
+      const token = await guestLogin()
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString())
+
+      saveConfig({ token, userId: payload.userId })
+
+      console.log('✅ Login successful!')
+      console.log(`📝 Token saved to ${CONFIG_FILE}`)
+      console.log(`🆔 User ID: ${payload.userId}`)
+      console.log('\n🚀 Run "boba start" to launch your daemon')
+    } catch (error) {
+      console.error('❌ Login failed:', error instanceof Error ? error.message : error)
+      process.exit(1)
+    }
+  })
+
+program
+  .command('start')
+  .description('Start your personal Boba daemon')
+  .action(() => {
+    const config = getConfig()
+
+    if (!config.token) {
+      console.error('❌ No token found. Run "boba login" first')
+      process.exit(1)
+    }
+
+    console.log('🚀 Starting Boba daemon...')
+    console.log(`🔗 Connecting to relay: ${RELAY_URL}`)
+    console.log(`👤 User ID: ${config.userId}`)
+    console.log(`📂 Working directory: ${process.cwd()}`)
+    console.log('\n✨ Daemon running! Open the web app to use Claude:\n')
+    console.log(`   ${WEB_URL}\n`)
+
+    const daemonScript = join(process.cwd(), 'apps/daemon/src/user-daemon.ts')
+
+    if (!existsSync(daemonScript)) {
+      console.error(`❌ Daemon script not found: ${daemonScript}`)
+      console.error('Run this command from the Boba-Claude root directory')
+      process.exit(1)
+    }
+
+    const daemon = spawn('npx', ['tsx', daemonScript], {
+      env: {
+        ...process.env,
+        USER_AUTH_TOKEN: config.token,
+        RELAY_URL,
+      },
+      stdio: 'inherit',
+    })
+
+    daemon.on('error', (error) => {
+      console.error('❌ Failed to start daemon:', error.message)
+      process.exit(1)
+    })
+
+    daemon.on('exit', (code) => {
+      if (code !== 0) {
+        console.error(`❌ Daemon exited with code ${code}`)
+        process.exit(code || 1)
+      }
+    })
+
+    process.on('SIGINT', () => {
+      console.log('\n👋 Stopping daemon...')
+      daemon.kill('SIGINT')
+      process.exit(0)
+    })
+  })
+
+program
+  .command('web')
+  .description('Open the Boba web interface')
+  .action(async () => {
+    console.log(`🌐 Opening ${WEB_URL}...`)
+    await open(WEB_URL)
+  })
+
+program
+  .command('status')
+  .description('Show current configuration')
+  .action(() => {
+    const config = getConfig()
+
+    console.log('📊 Boba Status\n')
+    console.log(`Config file: ${CONFIG_FILE}`)
+    console.log(`Logged in: ${config.token ? '✅ Yes' : '❌ No'}`)
+
+    if (config.token) {
+      console.log(`User ID: ${config.userId}`)
+    }
+
+    console.log(`\nRelay URL: ${RELAY_URL}`)
+    console.log(`API URL: ${API_URL}`)
+    console.log(`Web URL: ${WEB_URL}`)
+  })
+
+program.parse()

@@ -72,6 +72,10 @@ async function main() {
       console.log(`[Cloud Relay] Daemon connected for user ${userId}`)
       machineRegistry.set(userId, socket)
 
+      // Notify daemon and all frontends
+      socket.emit('daemon_registered', { userId })
+      broadcastToUserFrontends(userId, 'daemon_connected', { userId })
+
       // Forward all daemon events to user's frontends
       socket.on('session_ready', (data: any) => {
         console.log(`[Cloud Relay] Forwarding session_ready to frontends for user ${userId}`)
@@ -91,13 +95,48 @@ async function main() {
       })
 
       socket.on('claude_message', (data: any) => {
-        console.log(`[Cloud Relay] Forwarding claude_message to frontends for user ${userId}`)
-        broadcastToUserFrontends(userId, 'output', data)
+        console.log(`[Cloud Relay] Received claude_message from daemon for user ${userId}`)
+
+        // Parse the stream-json content and extract clean text
+        try {
+          const lines = data.content.split('\n').filter((line: string) => line.trim())
+
+          for (const line of lines) {
+            try {
+              const msg = JSON.parse(line)
+
+              // Only forward text content from assistant messages
+              if (msg.type === 'assistant' && msg.message?.content) {
+                const content = Array.isArray(msg.message.content)
+                  ? msg.message.content.find((c: any) => c.type === 'text')?.text
+                  : msg.message.content
+
+                if (content) {
+                  console.log(`[Cloud Relay] Forwarding clean text to frontends`)
+                  broadcastToUserFrontends(userId, 'output', {
+                    sessionId: data.sessionId,
+                    content: content
+                  })
+                }
+              }
+            } catch {
+              // Not JSON, skip
+            }
+          }
+        } catch (error) {
+          console.error('[Cloud Relay] Error parsing claude_message:', error)
+        }
+      })
+
+      socket.on('permission_request', (data: any) => {
+        console.log(`[Cloud Relay] Forwarding permission_request to frontends for user ${userId}`)
+        broadcastToUserFrontends(userId, 'permission_request', data)
       })
 
       socket.on('disconnect', () => {
         console.log(`[Cloud Relay] Daemon disconnected for user ${userId}`)
         machineRegistry.delete(userId)
+        broadcastToUserFrontends(userId, 'daemon_disconnected', { userId })
       })
 
       return
@@ -116,11 +155,13 @@ async function main() {
     console.log(`[Cloud Relay] Frontend connected for user ${userId}`)
     frontendConnections.set(socket, userId)
 
-    // Get user's daemon socket
+    // Check if daemon is connected, notify frontend immediately
     const daemonSocket = machineRegistry.get(userId)
-    if (!daemonSocket) {
-      console.error(`[Cloud Relay] No daemon connected for user ${userId}`)
-      socket.emit('error', { error: 'No local daemon connected. Run "boba start" on your machine.' })
+    if (daemonSocket) {
+      console.log(`[Cloud Relay] Daemon already connected for user ${userId}`)
+      socket.emit('daemon_connected', { userId })
+    } else {
+      console.log(`[Cloud Relay] No daemon connected yet for user ${userId}`)
     }
 
     // Forward create_session to daemon
@@ -155,12 +196,26 @@ async function main() {
 
     // Forward messages to daemon
     socket.on('message', (data: { sessionId: string; content: string }) => {
+      console.log(`[Cloud Relay] Received message from frontend for session ${data.sessionId}`)
       const daemon = machineRegistry.get(userId)
       if (!daemon) {
+        console.error(`[Cloud Relay] No daemon found for user ${userId}`)
         socket.emit('error', { error: 'No daemon connected' })
         return
       }
+      console.log(`[Cloud Relay] Forwarding message to daemon for session ${data.sessionId}`)
       daemon.emit('user_message', data)
+    })
+
+    // Forward permission responses to daemon
+    socket.on('permission_response', (data: { sessionId: string; requestId: string; approved: boolean }) => {
+      console.log(`[Cloud Relay] Forwarding permission_response to daemon for session ${data.sessionId}`)
+      const daemon = machineRegistry.get(userId)
+      if (!daemon) {
+        console.error(`[Cloud Relay] No daemon found for user ${userId}`)
+        return
+      }
+      daemon.emit('permission_response', data)
     })
 
     // Listen for daemon messages and forward to all frontends for this user

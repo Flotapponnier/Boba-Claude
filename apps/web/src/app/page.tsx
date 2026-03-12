@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useChatStore, useBobaStore, useAuthStore } from '@/lib/store'
 import { useClaude } from '@/hooks/useClaude'
 import Image from 'next/image'
-import { Settings, Send, MessageSquare, Clock, Plug, PlugZap, Wrench, Trash2, Pencil, X, RotateCcw, LogIn, LogOut } from 'lucide-react'
+import { Settings, Send, MessageSquare, Clock, Plug, PlugZap, Wrench, Trash2, Pencil, X, RotateCcw } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -34,66 +34,7 @@ export default function HomePage() {
     setClaudeSessionId,
   } = useChatStore()
   const { character } = useBobaStore()
-  const { authToken, setAuthToken, setUserId, logout } = useAuthStore()
   const { isConnected, isConnecting, error, permissionRequest, connectClaude, disconnect, sendMessage, respondToPermission, createSession: createClaudeSession, deleteSession: deleteClaudeSession, cancelSession } = useClaude()
-
-  // Simple guest login handler
-  const handleGuestLogin = async () => {
-    try {
-      const response = await fetch('http://localhost:3002/api/auth/guest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      })
-      const data = await response.json()
-      setAuthToken(data.token)
-      setUserId(data.account.id)
-    } catch (err) {
-      console.error('Guest login failed:', err)
-    }
-  }
-
-  // Connect Claude OAuth
-  const [claudeConnected, setClaudeConnected] = useState(false)
-  const handleConnectClaude = async () => {
-    if (!authToken) return
-    try {
-      const response = await fetch('http://localhost:3002/api/auth/claude-login', {
-        headers: { 'Authorization': `Bearer ${authToken}` }
-      })
-      const { authUrl } = await response.json()
-      window.open(authUrl, '_blank', 'width=600,height=700')
-    } catch (err) {
-      console.error('Failed to initiate OAuth:', err)
-    }
-  }
-
-  // Check Claude connection status
-  useEffect(() => {
-    if (!authToken) return
-    const checkStatus = async () => {
-      try {
-        const response = await fetch('http://localhost:3002/api/auth/claude-status', {
-          headers: { 'Authorization': `Bearer ${authToken}` }
-        })
-        const { connected } = await response.json()
-        setClaudeConnected(connected)
-      } catch (err) {
-        console.error('Failed to check Claude status:', err)
-      }
-    }
-    checkStatus()
-  }, [authToken])
-
-  // Detect OAuth callback success
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('auth') === 'success') {
-      setClaudeConnected(true)
-      // Clean URL
-      window.history.replaceState({}, '', '/')
-    }
-  }, [])
 
   const currentSession = currentSessionId ? sessionsObj[currentSessionId] : null
   const messages = currentSession?.messages || []
@@ -106,6 +47,38 @@ export default function HomePage() {
 
   useEffect(() => {
     setMounted(true)
+
+    // Always try to sync with daemon token on mount
+    const { setAuthToken, setUserId } = useAuthStore.getState()
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002'
+
+    // Try to get daemon token first
+    fetch(`${API_URL}/api/daemon/token`)
+      .then(res => res.json())
+      .then((data) => {
+        if (data.token && data.userId) {
+          console.log('[Frontend] Syncing with daemon token')
+          setAuthToken(data.token)
+          setUserId(data.userId)
+        } else {
+          throw new Error('No daemon token')
+        }
+      })
+      .catch(() => {
+        // Fallback to guest login if daemon not available
+        const { authToken } = useAuthStore.getState()
+        if (!authToken) {
+          console.log('[Frontend] Daemon not available, creating guest account')
+          import('@/lib/api').then(({ guestLogin }) => {
+            guestLogin().then((data) => {
+              setAuthToken(data.token)
+              setUserId(data.account.id)
+            }).catch((err) => {
+              console.error('Failed to auto-login as guest:', err)
+            })
+          })
+        }
+      })
   }, [])
 
   // Auto-scroll to bottom on new messages or loading state
@@ -219,48 +192,8 @@ export default function HomePage() {
             />
           </div>
 
-          {/* Auth & Connection Status */}
+          {/* Connection Status */}
           <div className="space-y-3">
-            {/* Simple Guest Login/Logout */}
-            {!authToken ? (
-              <button
-                onClick={handleGuestLogin}
-                className="w-full flex items-center gap-2 justify-center p-2 rounded-lg transition-all hover:scale-105"
-                style={{ backgroundColor: 'var(--accent)', color: '#ffffff' }}
-              >
-                <LogIn size={16} />
-                <span className="text-sm font-medium">Guest Login</span>
-              </button>
-            ) : (
-              <>
-                {/* Connect Claude OAuth */}
-                {!claudeConnected ? (
-                  <button
-                    onClick={handleConnectClaude}
-                    className="w-full flex items-center gap-2 justify-center p-2 rounded-lg transition-all hover:scale-105"
-                    style={{ backgroundColor: '#10b981', color: '#ffffff' }}
-                  >
-                    <Plug size={16} />
-                    <span className="text-sm font-medium">Connect Claude</span>
-                  </button>
-                ) : (
-                  <div className="w-full flex items-center gap-2 justify-center p-2 rounded-lg" style={{ backgroundColor: '#10b981', color: '#ffffff' }}>
-                    <PlugZap size={16} />
-                    <span className="text-sm font-medium">Claude Connected</span>
-                  </div>
-                )}
-
-                <button
-                  onClick={logout}
-                  className="w-full flex items-center gap-2 justify-center p-2 rounded-lg transition-all hover:scale-105"
-                  style={{ backgroundColor: '#6b7280', color: '#ffffff' }}
-                >
-                  <LogOut size={16} />
-                  <span className="text-sm font-medium">Logout</span>
-                </button>
-              </>
-            )}
-
             <div className="flex items-center gap-2 justify-center">
               <div
                 className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}

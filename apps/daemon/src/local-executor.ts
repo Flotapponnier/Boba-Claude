@@ -1,71 +1,187 @@
 /**
- * Local Executor - Spawns Claude CLI locally (not via SSH)
- * Inspired by Happy CLI's approach
+ * Local Executor - Manages persistent interactive Claude CLI process
+ * Uses Happy CLI wrapper approach to load Claude in-process
  */
 import { spawn, ChildProcess } from 'node:child_process'
+import { readlinkSync, existsSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// ESM equivalent of __dirname
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
 export interface LocalExecutorConfig {
   workingDir: string
-  claudePath?: string // Path to Claude CLI, defaults to 'claude' in PATH
+  claudePath?: string
+  nodePath?: string // Absolute path to node binary
+}
+
+interface PermissionRequest {
+  requestId: string
+  toolName: string
+  input: unknown
+}
+
+interface PendingPermission {
+  resolve: (approved: boolean) => void
+  reject: (error: Error) => void
 }
 
 export class LocalExecutor {
   private config: LocalExecutorConfig
   private claudePath: string
+  private process: ChildProcess | null = null
+  private pendingPermissions = new Map<string, PendingPermission>()
+  private onPermissionRequest?: (request: PermissionRequest) => void
 
   constructor(config: LocalExecutorConfig) {
     this.config = config
     this.claudePath = config.claudePath || 'claude'
   }
 
+  setPermissionCallback(callback: (request: PermissionRequest) => void) {
+    this.onPermissionRequest = callback
+  }
+
   async connect(): Promise<void> {
-    // For local execution, just verify Claude CLI exists
-    try {
-      const { execSync } = await import('child_process')
-      execSync(`command -v ${this.claudePath}`, { stdio: 'pipe' })
-      console.log(`[Local Executor] Found Claude CLI: ${this.claudePath}`)
-    } catch (error) {
-      throw new Error(`Claude CLI not found in PATH. Please install: npm install -g @anthropic/claude`)
-    }
+    console.log('[Local Executor] Verifying Claude CLI exists')
   }
 
   async disconnect(): Promise<void> {
-    // No persistent connection to close for local execution
-    console.log('[Local Executor] Disconnected (no-op for local)')
+    console.log('[Local Executor] Disconnecting')
+    if (this.process) {
+      this.process.kill()
+      this.process = null
+    }
   }
 
-  async executeCommand(command: string): Promise<{ stdout: string; stderr: string }> {
-    return new Promise((resolve, reject) => {
-      console.log(`[Local Executor] Executing: ${command}`)
+  /**
+   * Start interactive Claude process with Happy CLI wrapper
+   * Loads Claude CLI in-process using the wrapper approach
+   */
+  async startInteractiveSession(callbacks: {
+    onOutput: (data: string) => void
+    onError: (data: string) => void
+    onExit: (code: number | null) => void
+  }): Promise<void> {
+    if (this.process) {
+      throw new Error('Session already running')
+    }
 
-      const child = spawn('sh', ['-c', command], {
-        cwd: this.config.workingDir,
-        env: process.env,
-      })
-
-      let stdout = ''
-      let stderr = ''
-
-      child.stdout?.on('data', (data) => {
-        stdout += data.toString()
-      })
-
-      child.stderr?.on('data', (data) => {
-        stderr += data.toString()
-      })
-
-      child.on('error', (error) => {
-        reject(error)
-      })
-
-      child.on('close', (code) => {
-        if (code === 0 || stdout) {
-          resolve({ stdout, stderr })
+    // Resolve symlink to actual cli.js
+    let resolvedPath = this.claudePath
+    try {
+      if (existsSync(this.claudePath)) {
+        const realPath = readlinkSync(this.claudePath)
+        if (!realPath.startsWith('/')) {
+          const path = await import('path')
+          resolvedPath = path.join(path.dirname(this.claudePath), realPath)
         } else {
-          reject(new Error(`Command failed with code ${code}: ${stderr}`))
+          resolvedPath = realPath
         }
-      })
+      }
+    } catch {
+      // Not a symlink, use original
+    }
+
+    console.log(`[Local Executor] Starting Claude with Happy CLI wrapper: ${resolvedPath}`)
+    console.log(`[Local Executor] Node path: ${this.config.nodePath || 'node'}`)
+
+    // Ensure working directory exists
+    const { mkdirSync } = await import('fs')
+    try {
+      mkdirSync(this.config.workingDir, { recursive: true })
+    } catch (error: any) {
+      if (error.code !== 'EEXIST') {
+        throw new Error(`Failed to create working directory: ${error.message}`)
+      }
+    }
+
+    const nodePath = this.config.nodePath || 'node'
+    const wrapperPath = join(__dirname, 'claude-wrapper.cjs')
+
+    console.log(`[Local Executor] Using wrapper: ${wrapperPath}`)
+
+    // Spawn Claude CLI with Happy CLI wrapper in programmatic mode
+    this.process = spawn(nodePath, [
+      wrapperPath,
+      resolvedPath,
+      '--output-format=stream-json',
+      '--input-format=stream-json',
+      '--permission-prompt-tool=stdio',
+      '--verbose'
+    ], {
+      cwd: this.config.workingDir,
+      env: {
+        ...process.env,
+        PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin',
+        DISABLE_AUTOUPDATER: '1',
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
     })
+
+    console.log(`[Local Executor] Claude process spawned with PID ${this.process.pid}`)
+
+    // Handle stdout - parse for control_request and forward relevant messages
+    this.process.stdout?.on('data', (data) => {
+      const lines = data.toString().split('\n')
+      for (const line of lines) {
+        if (!line.trim()) continue
+
+        try {
+          const msg = JSON.parse(line)
+
+          // Handle permission requests (control_request) - don't forward to frontend
+          if (msg.type === 'control_request' && msg.request?.subtype === 'can_use_tool') {
+            this.handlePermissionRequest(msg)
+            continue
+          }
+
+          // Only forward assistant/system/user messages, not control messages
+          if (msg.type === 'assistant' || msg.type === 'system' || msg.type === 'user' || msg.type === 'result') {
+            callbacks.onOutput(line + '\n')
+          }
+        } catch {
+          // Not JSON, pass through as-is (error messages, etc.)
+          callbacks.onOutput(line + '\n')
+        }
+      }
+    })
+
+    // Handle stderr
+    this.process.stderr?.on('data', (data) => {
+      callbacks.onError(data.toString())
+    })
+
+    // Handle exit
+    this.process.on('exit', (code) => {
+      console.log(`[Local Executor] Claude process exited with code ${code}`)
+      this.process = null
+      callbacks.onExit(code)
+    })
+  }
+
+  /**
+   * Send message to Claude process in stream-json format
+   */
+  async sendMessage(message: string): Promise<void> {
+    if (!this.process) {
+      throw new Error('No active Claude process')
+    }
+
+    // Format message as stream-json (newline-delimited JSON)
+    // Claude CLI expects full Anthropic API message format
+    const jsonMessage = JSON.stringify({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: message,
+      }
+    })
+
+    console.log(`[Local Executor] Writing to stdin (stream-json): ${message.substring(0, 50)}...`)
+    this.process.stdin?.write(jsonMessage + '\n')
   }
 
   async fileExists(path: string): Promise<boolean> {
@@ -76,5 +192,67 @@ export class LocalExecutor {
     } catch {
       return false
     }
+  }
+
+  /**
+   * Handle permission request from Claude CLI
+   */
+  private handlePermissionRequest(msg: any): void {
+    const requestId = msg.request_id
+    const toolName = msg.request.tool_name
+    const input = msg.request.input
+
+    console.log(`[Local Executor] Permission request: ${toolName}`)
+
+    // Create promise that will be resolved when user responds
+    const promise = new Promise<boolean>((resolve, reject) => {
+      this.pendingPermissions.set(requestId, { resolve, reject })
+    })
+
+    // Notify callback
+    if (this.onPermissionRequest) {
+      this.onPermissionRequest({ requestId, toolName, input })
+    }
+
+    // Wait for response and send back to Claude
+    promise.then((approved) => {
+      this.sendPermissionResponse(requestId, approved)
+    }).catch((error) => {
+      console.error('[Local Executor] Permission request error:', error)
+      this.sendPermissionResponse(requestId, false)
+    })
+  }
+
+  /**
+   * Respond to a permission request
+   */
+  respondToPermission(requestId: string, approved: boolean): void {
+    const pending = this.pendingPermissions.get(requestId)
+    if (pending) {
+      this.pendingPermissions.delete(requestId)
+      pending.resolve(approved)
+    }
+  }
+
+  /**
+   * Send permission response back to Claude CLI via stdin
+   */
+  private sendPermissionResponse(requestId: string, approved: boolean): void {
+    if (!this.process) return
+
+    const response = {
+      type: 'control_response',
+      response: {
+        subtype: 'success',
+        request_id: requestId,
+        response: {
+          behavior: approved ? 'allow' : 'deny',
+          ...(approved ? { updatedInput: {} } : { message: 'User denied permission' })
+        }
+      }
+    }
+
+    console.log(`[Local Executor] Sending permission response: ${approved ? 'allow' : 'deny'}`)
+    this.process.stdin?.write(JSON.stringify(response) + '\n')
   }
 }

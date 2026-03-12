@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client'
 import { authRoutes } from './routes/authRoutes.js'
 import { sessionRoutes } from './routes/sessionRoutes.js'
 import { workspaceRoutes } from './routes/workspaceRoutes.js'
+import { daemonRoutes } from './routes/daemonRoutes.js'
 
 const PORT = parseInt(process.env.PORT || '3002', 10)
 
@@ -76,6 +77,7 @@ async function main() {
   await app.register(authRoutes, { prefix: '/api' })
   await app.register(sessionRoutes, { prefix: '/api' })
   await app.register(workspaceRoutes, { prefix: '/api' })
+  await app.register(daemonRoutes, { prefix: '/api' })
 
   // Start server
   try {

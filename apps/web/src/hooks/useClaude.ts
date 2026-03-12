@@ -81,11 +81,16 @@ export function useClaude() {
       socketRef.current = socket
 
       socket.on('connect', () => {
-        console.log('[Frontend] Socket.IO connected to multi-session daemon')
+        console.log('[Frontend] Socket.IO connected to relay server')
+        setWasConnected(true)
+        // Don't set isConnected=true yet, wait for daemon_connected event
+      })
+
+      socket.on('daemon_connected', () => {
+        console.log('[Frontend] Local daemon is connected and ready')
         setIsConnected(true)
         setIsConnecting(false)
         setError(null)
-        setWasConnected(true)
 
         // Re-register all existing sessions so daemon knows about them
         const { sessions } = useChatStore.getState()
@@ -94,6 +99,12 @@ export function useClaude() {
           console.log('[Frontend] Re-registering existing sessions:', sessionIds)
           sessionIds.forEach((sid) => socket.emit('create_session', { sessionId: sid }))
         }
+      })
+
+      socket.on('daemon_disconnected', () => {
+        console.log('[Frontend] Local daemon disconnected')
+        setIsConnected(false)
+        setError('Daemon disconnected. Run "boba start" to reconnect.')
       })
 
       socket.on('connect_error', (err) => {
@@ -336,8 +347,9 @@ export function useClaude() {
     if (!socketRef.current || !permissionRequest) return
 
     socketRef.current.emit('permission_response', {
+      sessionId: permissionRequest.sessionId,
       requestId: permissionRequest.requestId,
-      allowed,
+      approved: allowed,
     })
 
     permissionQueueRef.current = permissionQueueRef.current.filter(

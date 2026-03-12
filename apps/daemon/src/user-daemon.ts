@@ -91,22 +91,32 @@ async function main() {
         return
       }
 
-      // Create local executor
-      const executor = new LocalExecutor({
-        workingDir: data.directory || process.cwd(),
-      })
-
-      await executor.connect()
-
-      // Find Claude CLI
-      const claudePaths = ['claude', '/usr/local/bin/claude', '/usr/bin/claude', process.env.HOME + '/.local/bin/claude']
+      // Find Claude CLI and node binary using which
       let claudePath: string | null = null
-
-      for (const path of claudePaths) {
-        if (await executor.fileExists(path) || path === 'claude') {
-          claudePath = path
-          console.log(`[User Daemon] Found Claude at: ${path}`)
-          break
+      let nodePath: string | null = null
+      try {
+        const { execSync } = await import('child_process')
+        const whichClaudeResult = execSync('which claude', { encoding: 'utf8' }).trim()
+        const whichNodeResult = execSync('which node', { encoding: 'utf8' }).trim()
+        if (whichClaudeResult) {
+          claudePath = whichClaudeResult
+          console.log(`[User Daemon] Found Claude at: ${claudePath}`)
+        }
+        if (whichNodeResult) {
+          nodePath = whichNodeResult
+          console.log(`[User Daemon] Found node at: ${nodePath}`)
+        }
+      } catch (error) {
+        // which failed, try common paths
+        const claudePaths = ['/usr/local/bin/claude', '/usr/bin/claude', process.env.HOME + '/.local/bin/claude', process.env.HOME + '/.bun/bin/claude']
+        for (const path of claudePaths) {
+          try {
+            const { accessSync } = await import('fs')
+            accessSync(path)
+            claudePath = path
+            console.log(`[User Daemon] Found Claude at: ${path}`)
+            break
+          } catch {}
         }
       }
 
@@ -115,9 +125,29 @@ async function main() {
           success: false,
           error: 'Claude CLI not found. Install with: curl -fsSL https://claude.ai/install.sh | bash',
         })
-        await executor.disconnect()
         return
       }
+
+      // Create local executor with Claude path and node path
+      const executor = new LocalExecutor({
+        workingDir: data.directory || process.cwd(),
+        claudePath,
+        nodePath: nodePath || undefined, // Use absolute node path if found
+      })
+
+      await executor.connect()
+
+      // Setup permission callback
+      executor.setPermissionCallback((request) => {
+        console.log(`[User Daemon] Permission request for session ${data.sessionId}: ${request.toolName}`)
+        // Forward to relay → frontend
+        socket.emit('permission_request', {
+          sessionId: data.sessionId,
+          requestId: request.requestId,
+          toolName: request.toolName,
+          input: request.input,
+        })
+      })
 
       // Store session
       activeSessions.set(data.sessionId, {
@@ -126,6 +156,33 @@ async function main() {
         workingDir: data.directory || process.cwd(),
         claudePath,
         messageHistory: [],
+      })
+
+      // Start interactive Claude session with streaming callbacks
+      await executor.startInteractiveSession({
+        onOutput: (output: string) => {
+          console.log(`[User Daemon] Claude output for session ${data.sessionId}`)
+          // Stream output to relay in real-time
+          socket.emit('claude_message', {
+            sessionId: data.sessionId,
+            content: output,
+          })
+        },
+        onError: (error: string) => {
+          console.error(`[User Daemon] Claude error for session ${data.sessionId}:`, error)
+          socket.emit('error', {
+            sessionId: data.sessionId,
+            error,
+          })
+        },
+        onExit: (code: number | null) => {
+          console.log(`[User Daemon] Claude exited for session ${data.sessionId} with code ${code}`)
+          activeSessions.delete(data.sessionId)
+          socket.emit('session_ended', {
+            sessionId: data.sessionId,
+            code,
+          })
+        },
       })
 
       console.log(`[User Daemon] ✓ Session ${data.sessionId} ready`)
@@ -154,41 +211,31 @@ async function main() {
       // Add user message to history
       session.messageHistory.push({ role: 'user', content: data.content })
 
-      // Build conversation context
-      const conversationContext = session.messageHistory
-        .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
-        .join('\n\n') + '\n\nAssistant:'
+      // Send message to interactive Claude process
+      await session.executor.sendMessage(data.content)
 
-      // Execute Claude
-      const command = `cd ${session.workingDir} && echo "${conversationContext.replace(/"/g, '\\"')}" | ${session.claudePath} -p`
-      const result = await session.executor.executeCommand(command)
-
-      console.log(`[User Daemon] Claude response for session ${data.sessionId}`)
-
-      // Clean output
-      const cleanOutput = result.stdout
-        .replace(/Ubuntu.*LTS.*\\n.*\\l/g, '')
-        .trim()
-
-      // Add assistant response to history
-      session.messageHistory.push({ role: 'assistant', content: cleanOutput })
-
-      // Send output back to relay
-      socket.emit('claude_message', {
-        sessionId: data.sessionId,
-        content: cleanOutput,
-      })
-
-      if (result.stderr) {
-        console.error(`[User Daemon] stderr:`, result.stderr)
-      }
+      console.log(`[User Daemon] Message sent to Claude for session ${data.sessionId}`)
     } catch (error: any) {
-      console.error('[User Daemon] Failed to execute Claude:', error)
+      console.error('[User Daemon] Failed to send message to Claude:', error)
       socket.emit('error', {
         sessionId: data.sessionId,
-        error: error.message || 'Failed to execute command',
+        error: error.message || 'Failed to send message',
       })
     }
+  })
+
+  // Handle permission responses from relay (frontend → daemon)
+  socket.on('permission_response', async (data: { sessionId: string; requestId: string; approved: boolean }) => {
+    console.log(`[User Daemon] Permission response for session ${data.sessionId}: ${data.approved ? 'approved' : 'denied'}`)
+
+    const session = activeSessions.get(data.sessionId)
+    if (!session) {
+      console.error(`[User Daemon] Session ${data.sessionId} not found`)
+      return
+    }
+
+    // Forward response to executor
+    session.executor.respondToPermission(data.requestId, data.approved)
   })
 
   // Handle stop_session from relay

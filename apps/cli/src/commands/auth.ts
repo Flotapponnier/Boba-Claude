@@ -62,7 +62,7 @@ export async function login() {
         continue
       }
 
-      const data = await pollResponse.json()
+      const data = await pollResponse.json() as { state: string; token?: string }
 
       if (data.state === 'authorized' && data.token) {
         await fs.writeFile(TOKEN_FILE, data.token, 'utf-8')

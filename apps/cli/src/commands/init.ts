@@ -78,11 +78,11 @@ export async function initCommand() {
     })
 
     if (!response.ok) {
-      const error = await response.json()
+      const error = await response.json() as { error?: string }
       throw new Error(error.error || 'Failed to create workspace')
     }
 
-    const { workspace } = await response.json()
+    const { workspace } = await response.json() as { workspace: any }
 
     console.log(chalk.green('✓ Workspace created successfully!'))
     console.log(chalk.gray('\nWorkspace details:'))
