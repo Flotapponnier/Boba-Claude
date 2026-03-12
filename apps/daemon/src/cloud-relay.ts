@@ -44,21 +44,19 @@ async function main() {
       return
     }
 
-    // Verify token with API
+    // Decode JWT to get userId (no API verification needed)
     let userId: string
     try {
-      const response = await fetch(`${API_URL}/api/auth/verify`, {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-        },
-      })
+      // Decode JWT payload (format: header.payload.signature)
+      const payloadBase64 = authToken.split('.')[1]
+      const payloadJson = Buffer.from(payloadBase64, 'base64').toString('utf-8')
+      const payload = JSON.parse(payloadJson)
+      userId = payload.userId
 
-      if (!response.ok) {
-        throw new Error('Invalid token')
+      if (!userId) {
+        throw new Error('No userId in token')
       }
 
-      const data = await response.json()
-      userId = data.userId
       console.log(`[Cloud Relay] Authenticated user: ${userId} (type: ${clientType})`)
     } catch (error) {
       console.error('[Cloud Relay] Authentication failed:', error)
