@@ -268,3 +268,16 @@ async function stopSession(sessionId: string): Promise<boolean> {
   console.error(chalk.red(`❌ Session ${sessionId} not found`))
   return false
 }
+
+// Entry point when run directly
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const authToken = process.env.USER_AUTH_TOKEN
+  if (!authToken) {
+    console.error(chalk.red('❌ USER_AUTH_TOKEN environment variable not set'))
+    process.exit(1)
+  }
+  startDaemon(authToken).catch((error) => {
+    console.error(chalk.red('❌ Failed to start daemon:'), error)
+    process.exit(1)
+  })
+}

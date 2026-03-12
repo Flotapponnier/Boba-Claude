@@ -19,6 +19,7 @@ export default function HomePage() {
   const [mounted, setMounted] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showResumeModal, setShowResumeModal] = useState(false)
+  const [showAuthModal, setShowAuthModal] = useState(false)
   const [input, setInput] = useState('')
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
@@ -35,6 +36,7 @@ export default function HomePage() {
   } = useChatStore()
   const { character } = useBobaStore()
   const { isConnected, isConnecting, error, permissionRequest, connectClaude, disconnect, sendMessage, respondToPermission, createSession: createClaudeSession, deleteSession: deleteClaudeSession, cancelSession } = useClaude()
+  const { authToken } = useAuthStore()
 
   const currentSession = currentSessionId ? sessionsObj[currentSessionId] : null
   const messages = currentSession?.messages || []
@@ -47,38 +49,6 @@ export default function HomePage() {
 
   useEffect(() => {
     setMounted(true)
-
-    // Always try to sync with daemon token on mount
-    const { setAuthToken, setUserId } = useAuthStore.getState()
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002'
-
-    // Try to get daemon token first
-    fetch(`${API_URL}/api/daemon/token`)
-      .then(res => res.json())
-      .then((data) => {
-        if (data.token && data.userId) {
-          console.log('[Frontend] Syncing with daemon token')
-          setAuthToken(data.token)
-          setUserId(data.userId)
-        } else {
-          throw new Error('No daemon token')
-        }
-      })
-      .catch(() => {
-        // Fallback to guest login if daemon not available
-        const { authToken } = useAuthStore.getState()
-        if (!authToken) {
-          console.log('[Frontend] Daemon not available, creating guest account')
-          import('@/lib/api').then(({ guestLogin }) => {
-            guestLogin().then((data) => {
-              setAuthToken(data.token)
-              setUserId(data.account.id)
-            }).catch((err) => {
-              console.error('Failed to auto-login as guest:', err)
-            })
-          })
-        }
-      })
   }, [])
 
   // Auto-scroll to bottom on new messages or loading state
@@ -208,7 +178,13 @@ export default function HomePage() {
 
             {/* Connect/Disconnect Button */}
             <button
-              onClick={isConnected ? disconnect : connectClaude}
+              onClick={isConnected ? disconnect : () => {
+                if (!authToken) {
+                  setShowAuthModal(true)
+                } else {
+                  connectClaude()
+                }
+              }}
               disabled={isConnecting}
               className="w-full flex items-center gap-2 justify-center p-2 rounded-lg transition-all hover:scale-105 disabled:opacity-50"
               style={{
@@ -371,6 +347,14 @@ export default function HomePage() {
           <ResumeSessionModal
             onClose={() => setShowResumeModal(false)}
             onResume={handleResumeSession}
+          />
+        )}
+
+        {/* Auth Token Modal */}
+        {showAuthModal && (
+          <AuthTokenModal
+            onClose={() => setShowAuthModal(false)}
+            onConnect={connectClaude}
           />
         )}
 
@@ -693,8 +677,93 @@ function ResumeSessionModal({ onClose, onResume }: {
   )
 }
 
+function AuthTokenModal({ onClose, onConnect }: {
+  onClose: () => void
+  onConnect: () => void
+}) {
+  const [token, setToken] = useState('')
+  const { setAuthToken, setUserId } = useAuthStore()
+
+  const handleSubmit = () => {
+    if (!token.trim()) return
+
+    try {
+      // Decode JWT to get userId (browser-compatible)
+      const base64Url = token.split('.')[1]
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+      const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+      }).join(''))
+      const payload = JSON.parse(jsonPayload)
+
+      setAuthToken(token.trim())
+      setUserId(payload.userId)
+      onClose()
+      // Connect after setting token
+      setTimeout(() => onConnect(), 100)
+    } catch (error) {
+      console.error('Token parse error:', error)
+      alert('Invalid token format')
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="rounded-2xl p-6 max-w-md w-full"
+        style={{ backgroundColor: '#ffffff' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-2xl font-bold mb-4" style={{ color: '#000000' }}>
+          Connect to Daemon
+        </h2>
+
+        <p className="text-sm mb-4" style={{ color: '#666666' }}>
+          Copy the authentication token from your terminal where you ran <code className="bg-gray-100 px-1 py-0.5 rounded">boba start</code>
+        </p>
+
+        <textarea
+          placeholder="Paste your authentication token here..."
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          className="w-full p-3 rounded-xl mb-4 outline-none font-mono text-xs h-32 resize-none"
+          style={{
+            backgroundColor: '#f5f5f5',
+            color: '#000000',
+            border: '1px solid #e0e0e0'
+          }}
+          autoFocus
+        />
+
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 rounded-xl font-medium"
+            style={{ backgroundColor: '#e0e0e0', color: '#000000' }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!token.trim()}
+            className="flex-1 py-3 rounded-xl font-medium disabled:opacity-50"
+            style={{ backgroundColor: '#10b981', color: '#ffffff' }}
+          >
+            Connect
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SettingsModal({ onClose }: { onClose: () => void }) {
   const { character, setCharacter } = useBobaStore()
+  const { authToken, logout } = useAuthStore()
+  const [showTokenModal, setShowTokenModal] = useState(false)
 
   const characters = [
     { id: 'black' as const, name: 'Black Boba', image: CHARACTER_IMAGES.black },
@@ -711,61 +780,110 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-      onClick={onClose}
-    >
+    <>
       <div
-        className="rounded-2xl p-6 max-w-md w-full"
-        style={{ backgroundColor: '#ffffff' }}
-        onClick={(e) => e.stopPropagation()}
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+        onClick={onClose}
       >
-        <h2 className="text-2xl font-bold mb-6" style={{ color: '#000000' }}>
-          Choose Your Boba
-        </h2>
-
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          {characters.map((char) => (
-            <button
-              key={char.id}
-              onClick={() => {
-                setCharacter(char.id)
-                onClose()
-              }}
-              className={`p-4 rounded-xl transition-all hover:scale-105 ${
-                character === char.id ? 'ring-4 ring-gray-400' : ''
-              }`}
-              style={{
-                backgroundColor: themeBgColors[character],
-              }}
-            >
-              <div className="relative w-20 h-20 mx-auto mb-2 animate-float">
-                <Image
-                  src={char.image}
-                  alt={char.name}
-                  fill
-                  className="object-contain"
-                  unoptimized
-                />
-              </div>
-              <p
-                className="text-sm font-medium text-center"
-                style={{ color: '#000000' }}
-              >
-                {char.name}
-              </p>
-            </button>
-          ))}
-        </div>
-
-        <button
-          onClick={onClose}
-          className="w-full py-3 rounded-xl font-medium"
-          style={{ backgroundColor: '#1a1a1a', color: '#ffffff' }}
+        <div
+          className="rounded-2xl p-6 max-w-md w-full"
+          style={{ backgroundColor: '#ffffff' }}
+          onClick={(e) => e.stopPropagation()}
         >
-          Done
-        </button>
+          <h2 className="text-2xl font-bold mb-6" style={{ color: '#000000' }}>
+            Settings
+          </h2>
+
+          <div className="mb-6">
+            <h3 className="text-sm font-medium mb-3" style={{ color: '#666666' }}>
+              Choose Your Boba
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              {characters.map((char) => (
+                <button
+                  key={char.id}
+                  onClick={() => {
+                    setCharacter(char.id)
+                  }}
+                  className={`p-4 rounded-xl transition-all hover:scale-105 ${
+                    character === char.id ? 'ring-4 ring-gray-400' : ''
+                  }`}
+                  style={{
+                    backgroundColor: themeBgColors[character],
+                  }}
+                >
+                  <div className="relative w-16 h-16 mx-auto mb-2 animate-float">
+                    <Image
+                      src={char.image}
+                      alt={char.name}
+                      fill
+                      className="object-contain"
+                      unoptimized
+                    />
+                  </div>
+                  <p
+                    className="text-xs font-medium text-center"
+                    style={{ color: '#000000' }}
+                  >
+                    {char.name}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mb-6 border-t pt-4" style={{ borderColor: '#e0e0e0' }}>
+            <h3 className="text-sm font-medium mb-3" style={{ color: '#666666' }}>
+              Authentication
+            </h3>
+            {authToken ? (
+              <div className="space-y-2">
+                <p className="text-xs" style={{ color: '#666666' }}>
+                  Token configured
+                </p>
+                <button
+                  onClick={() => {
+                    logout()
+                    onClose()
+                  }}
+                  className="w-full py-2 rounded-lg font-medium text-sm"
+                  style={{ backgroundColor: '#ef4444', color: '#ffffff' }}
+                >
+                  Clear Token
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setShowTokenModal(true)
+                }}
+                className="w-full py-2 rounded-lg font-medium text-sm"
+                style={{ backgroundColor: '#10b981', color: '#ffffff' }}
+              >
+                Set Token
+              </button>
+            )}
+          </div>
+
+          <button
+            onClick={onClose}
+            className="w-full py-3 rounded-xl font-medium"
+            style={{ backgroundColor: '#1a1a1a', color: '#ffffff' }}
+          >
+            Done
+          </button>
+        </div>
       </div>
-    </div>
+
+      {showTokenModal && (
+        <AuthTokenModal
+          onClose={() => {
+            setShowTokenModal(false)
+            onClose()
+          }}
+          onConnect={() => {}}
+        />
+      )}
+    </>
   )
 }

@@ -9,7 +9,7 @@ import open from 'open'
 const CONFIG_DIR = join(homedir(), '.boba')
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
 const API_URL = process.env.BOBA_API_URL || 'http://localhost:3002'
-const RELAY_URL = process.env.BOBA_RELAY_URL || 'http://localhost:3001'
+const RELAY_URL = process.env.BOBA_RELAY_URL || 'https://nuciform-patti-noncondensing.ngrok-free.dev'
 const WEB_URL = process.env.BOBA_WEB_URL || 'http://localhost:3000'
 
 interface Config {
@@ -90,8 +90,11 @@ program
     console.log(`📂 Working directory: ${process.cwd()}`)
     console.log('\n✨ Daemon running! Open the web app to use Claude:\n')
     console.log(`   ${WEB_URL}\n`)
+    console.log('🔐 Authentication Token (copy this to the web app):\n')
+    console.log(`   ${config.token}\n`)
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
 
-    const daemonScript = join(process.cwd(), 'apps/daemon/src/user-daemon.ts')
+    const daemonScript = join(process.cwd(), 'apps/cli/src/daemon/daemon.ts')
 
     if (!existsSync(daemonScript)) {
       console.error(`❌ Daemon script not found: ${daemonScript}`)
@@ -103,7 +106,7 @@ program
       env: {
         ...process.env,
         USER_AUTH_TOKEN: config.token,
-        RELAY_URL,
+        BOBA_CLOUD_URL: RELAY_URL,
       },
       stdio: 'inherit',
     })
