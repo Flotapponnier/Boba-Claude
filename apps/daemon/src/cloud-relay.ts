@@ -29,7 +29,7 @@ async function main() {
       methods: ['GET', 'POST'],
       credentials: true,
     },
-    transports: ['websocket'],
+    transports: ['websocket', 'polling'],
   })
 
   // Handle connections
