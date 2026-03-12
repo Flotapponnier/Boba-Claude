@@ -10,6 +10,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@prisma/client": "^7.5.0",
     "@tanstack/react-query": "^5.0.0",
     "axios": "^1.7.0",
     "lucide-react": "^0.563.0",

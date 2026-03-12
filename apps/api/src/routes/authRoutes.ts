@@ -8,6 +8,26 @@ import { authenticate } from '../middlewares/authenticate.js'
 const CLAUDE_AUTH_URL = 'https://console.anthropic.com/oauth/authorize'
 const CLAUDE_TOKEN_URL = 'https://console.anthropic.com/oauth/token'
 
+// In-memory storage for CLI auth requests
+interface CliAuthRequest {
+  requestId: string
+  state: 'pending' | 'authorized'
+  token?: string
+  createdAt: number
+}
+
+const cliAuthRequests = new Map<string, CliAuthRequest>()
+
+// Cleanup old requests every 5 minutes
+setInterval(() => {
+  const now = Date.now()
+  for (const [requestId, request] of cliAuthRequests.entries()) {
+    if (now - request.createdAt > 10 * 60 * 1000) { // 10 minutes
+      cliAuthRequests.delete(requestId)
+    }
+  }
+}, 5 * 60 * 1000)
+
 export async function authRoutes(app: FastifyInstance) {
   // Verify JWT token (for daemon)
   app.get('/auth/verify', {
@@ -15,6 +35,78 @@ export async function authRoutes(app: FastifyInstance) {
   }, async (request, reply) => {
     const { userId } = request as AuthenticatedRequest
     return { userId }
+  })
+
+  // CLI auth request - initiate browser OAuth flow
+  app.post('/auth/cli-request', async (request, reply) => {
+    const bodySchema = z.object({
+      requestId: z.string(),
+    })
+
+    const { requestId } = bodySchema.parse(request.body)
+
+    // Create pending request
+    cliAuthRequests.set(requestId, {
+      requestId,
+      state: 'pending',
+      createdAt: Date.now(),
+    })
+
+    return { success: true, state: 'pending' }
+  })
+
+  // CLI auth poll - check if user authorized
+  app.get('/auth/cli-poll/:requestId', async (request, reply) => {
+    const paramsSchema = z.object({
+      requestId: z.string(),
+    })
+
+    const { requestId } = paramsSchema.parse(request.params)
+
+    const authRequest = cliAuthRequests.get(requestId)
+    if (!authRequest) {
+      return reply.status(404).send({ error: 'Request not found or expired' })
+    }
+
+    if (authRequest.state === 'authorized' && authRequest.token) {
+      // Return token and cleanup
+      cliAuthRequests.delete(requestId)
+      return {
+        state: 'authorized',
+        token: authRequest.token,
+      }
+    }
+
+    return {
+      state: 'pending',
+    }
+  })
+
+  // CLI auth complete - frontend calls this after user login
+  app.post('/auth/cli-complete', {
+    preHandler: authenticate,
+  }, async (request, reply) => {
+    const { userId } = request as AuthenticatedRequest
+
+    const bodySchema = z.object({
+      requestId: z.string(),
+    })
+
+    const { requestId } = bodySchema.parse(request.body)
+
+    const authRequest = cliAuthRequests.get(requestId)
+    if (!authRequest) {
+      return reply.status(404).send({ error: 'Request not found or expired' })
+    }
+
+    // Generate new token for this CLI
+    const token = app.jwt.sign({ userId })
+
+    // Mark as authorized
+    authRequest.state = 'authorized'
+    authRequest.token = token
+
+    return { success: true }
   })
 
   // Guest login - creates anonymous account
@@ -25,6 +117,20 @@ export async function authRoutes(app: FastifyInstance) {
       data: {
         publicKey,
         username: `guest_${publicKey.slice(0, 8)}`,
+      },
+    })
+
+    // Create default workspace for guest (same config as rescue server)
+    await app.prisma.workspace.create({
+      data: {
+        accountId: account.id,
+        name: 'rescue-server',
+        sshHost: '57.130.19.92',
+        sshPort: 8822,
+        sshUser: 'rescue',
+        sshPassword: null, // Use SSH key
+        workingDir: '/home/rescue',
+        isActive: true,
       },
     })
 

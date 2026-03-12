@@ -73,6 +73,7 @@ export function useClaude() {
         reconnection: false,
         auth: {
           token: authToken,
+          clientType: 'frontend',
         },
       })
 
@@ -86,7 +87,7 @@ export function useClaude() {
         setError(null)
         setWasConnected(true)
 
-        // Auto-register all existing sessions so daemon re-attaches or spawns them
+        // Re-register all existing sessions so daemon knows about them
         const { sessions } = useChatStore.getState()
         const sessionIds = Object.keys(sessions)
         if (sessionIds.length > 0) {
@@ -162,6 +163,35 @@ export function useClaude() {
         permissionQueueRef.current.push(data)
         if (!permissionRequest) {
           setPermissionRequest(data)
+        }
+      })
+
+      socket.on('output', (data: { sessionId: string; content: string }) => {
+        const currentSession = useChatStore.getState().currentSessionId
+        console.log(`[Frontend] Received output for session ${data.sessionId}:`, data.content)
+
+        // IMPORTANT: Save message to the correct session, even if it's not the active one
+        const { sessions, currentSessionId } = useChatStore.getState()
+        const targetSession = sessions[data.sessionId]
+
+        if (targetSession) {
+          // Temporarily switch to target session to add message
+          const wasCurrentSession = currentSessionId
+          useChatStore.getState().switchSession(data.sessionId)
+
+          addMessage({
+            role: 'assistant',
+            content: data.content,
+          })
+
+          // Switch back to original session
+          if (wasCurrentSession && wasCurrentSession !== data.sessionId) {
+            useChatStore.getState().switchSession(wasCurrentSession)
+          }
+
+          setLoading(data.sessionId, false)
+        } else {
+          console.warn(`[Frontend] Received output for unknown session ${data.sessionId}`)
         }
       })
 

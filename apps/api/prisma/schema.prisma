@@ -17,6 +17,7 @@ model Account {
   updatedAt    DateTime       @updatedAt
   claudeTokens ClaudeToken[]
   sessions     Session[]
+  workspaces   Workspace[]
 }
 
 model ClaudeToken {
@@ -34,13 +35,44 @@ model ClaudeToken {
 }
 
 model Session {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   accountId       String
-  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  title           String   @default("New Chat")
-  claudeSessionId String?  // Claude CLI session ID for resume
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  account         Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  title           String    @default("New Chat")
+  claudeSessionId String?   // Claude CLI session ID for resume
+  messages        Message[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([accountId])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      String   // 'user' or 'assistant'
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
+
+model Workspace {
+  id          String   @id @default(cuid())
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name        String   // e.g. "my-coder-workspace"
+  sshHost     String   // e.g. "57.130.19.92"
+  sshPort     Int      @default(22)
+  sshUser     String   // e.g. "rescue"
+  sshPassword String?  // Encrypted password (optional if using key)
+  sshKeyPath  String?  // Path to SSH key on VPS
+  workingDir  String   @default("/home/rescue") // Default working directory
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([accountId])
+  @@unique([accountId, name])
 }
