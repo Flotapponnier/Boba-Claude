@@ -12,14 +12,21 @@ import { createServer } from 'node:http'
 import { spawn, ChildProcess } from 'node:child_process'
 import { SSHExecutor, SSHConfig } from './ssh-executor.js'
 import { LocalExecutor } from './local-executor.js'
-import { PrismaClient } from '@prisma/client'
 
 const WS_PORT = 3001
 const API_URL = process.env.API_URL || 'http://localhost:3002'
 const LOCAL_MODE = process.env.LOCAL_MODE === 'true'
 
-// Initialize Prisma
-const prisma = new PrismaClient()
+// Lazy-load Prisma only when needed (SSH mode)
+let prisma: any = null
+async function getPrisma() {
+  if (LOCAL_MODE) return null
+  if (!prisma) {
+    const { PrismaClient } = await import('@prisma/client')
+    prisma = new PrismaClient()
+  }
+  return prisma
+}
 
 interface SessionInfo {
   sessionId: string
@@ -281,15 +288,19 @@ async function main() {
         return
       }
 
-      // Check if session exists in DB (daemon was restarted)
-      const dbSession = await prisma.session.findUnique({
-        where: { id: data.sessionId },
-        include: {
-          messages: {
-            orderBy: { createdAt: 'asc' },
+      // Check if session exists in DB (daemon was restarted) - only in SSH mode
+      let dbSession = null
+      const db = await getPrisma()
+      if (db) {
+        dbSession = await db.session.findUnique({
+          where: { id: data.sessionId },
+          include: {
+            messages: {
+              orderBy: { createdAt: 'asc' },
+            },
           },
-        },
-      })
+        })
+      }
 
       if (dbSession && dbSession.accountId === userId) {
         console.log(`[Cloud Daemon] Found session ${data.sessionId} in DB with ${dbSession.messages.length} messages, restoring...`)
@@ -336,16 +347,19 @@ async function main() {
           socket
         )
 
-        // Create session in DB if it doesn't exist
-        await prisma.session.upsert({
-          where: { id: data.sessionId },
-          create: {
-            id: data.sessionId,
-            accountId: userId,
-            title: 'New Chat',
-          },
-          update: {},
-        })
+        // Create session in DB if it doesn't exist (SSH mode only)
+        const db = await getPrisma()
+        if (db) {
+          await db.session.upsert({
+            where: { id: data.sessionId },
+            create: {
+              id: data.sessionId,
+              accountId: userId,
+              title: 'New Chat',
+            },
+            update: {},
+          })
+        }
       } catch (error: any) {
         console.error('[Cloud Daemon] Failed to create session:', error)
         socket.emit('error', {
@@ -372,14 +386,17 @@ async function main() {
       // Add user message to history
       session.messageHistory.push({ role: 'user', content: data.content })
 
-      // Save user message to DB
-      await prisma.message.create({
-        data: {
-          sessionId: data.sessionId,
-          role: 'user',
-          content: data.content,
-        },
-      })
+      // Save user message to DB (SSH mode only)
+      const db = await getPrisma()
+      if (db) {
+        await db.message.create({
+          data: {
+            sessionId: data.sessionId,
+            role: 'user',
+            content: data.content,
+          },
+        })
+      }
 
       // Execute claude with -p flag (print mode)
       // Build full conversation context
@@ -405,20 +422,23 @@ async function main() {
         // Add assistant response to history
         session.messageHistory.push({ role: 'assistant', content: cleanOutput })
 
-        // Save assistant response to DB
-        await prisma.message.create({
-          data: {
-            sessionId: data.sessionId,
-            role: 'assistant',
-            content: cleanOutput,
-          },
-        })
+        // Save assistant response to DB (SSH mode only)
+        const db = await getPrisma()
+        if (db) {
+          await db.message.create({
+            data: {
+              sessionId: data.sessionId,
+              role: 'assistant',
+              content: cleanOutput,
+            },
+          })
 
-        // Update session timestamp
-        await prisma.session.update({
-          where: { id: data.sessionId },
-          data: { updatedAt: new Date() },
-        })
+          // Update session timestamp
+          await db.session.update({
+            where: { id: data.sessionId },
+            data: { updatedAt: new Date() },
+          })
+        }
 
         // Send output back to client
         socket.emit('output', {
