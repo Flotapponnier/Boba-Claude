@@ -1,224 +1,299 @@
 # Boba Claude
 
-Multi-tenant web interface for Claude Code CLI with OAuth authentication and persistent chat history.
+Cloud-based Claude CLI interface with SSH architecture and persistent sessions.
 
 ## Architecture
 
-- **apps/web**: Next.js frontend with real-time chat interface
-- **apps/daemon**: WebSocket server that spawns and manages Claude CLI processes
-- **apps/api**: Fastify API server for authentication and user management
+**3 main components:**
+1. **Web App** (Next.js) - User interface
+2. **API** (Fastify + PostgreSQL) - Auth, sessions, workspaces
+3. **Cloud Daemon** (Node.js + Socket.IO) - Manages Claude sessions via SSH
 
-## Features
+**Flow:**
+```
+Browser → WebSocket → Cloud Daemon (VPS) → SSH → Remote Machine (Claude CLI)
+                         ↓
+                   PostgreSQL (persistence)
+```
 
-- Multi-user support with OAuth authentication
-- Each user connects their own Claude subscription
-- Persistent chat sessions with resume capability
-- Real-time communication via WebSocket
-- Tool permission management UI
-- Encrypted token storage
+## Quick Start
 
-## Prerequisites
-
-- Node.js >= 20.0.0
-- pnpm
+### Prerequisites
+- Node.js 18+ or Bun
 - PostgreSQL database
-- Claude CLI installed (`npm install -g @anthropic/claude-cli`)
-- Claude OAuth credentials (from Anthropic Console)
+- SSH access to a remote machine with Claude CLI installed
 
-## Setup
-
-### 1. Install dependencies
+### Installation
 
 ```bash
-pnpm install
+# Clone repo
+git clone <repo>
+cd Boba-Claude
+
+# Install dependencies
+bun install
+cd apps/api && bun install
+cd ../daemon && bun install
+cd ../web && bun install
 ```
 
-### 2. Set up PostgreSQL database
-
-Create a PostgreSQL database:
+### Database Setup
 
 ```bash
-createdb boba_claude
-```
+# Create .env in apps/api/
+echo 'DATABASE_URL="postgresql://user:pass@localhost:5432/boba_claude"' > apps/api/.env
 
-### 3. Configure environment variables
-
-#### API Server (`apps/api/.env`)
-
-```bash
+# Run migrations
 cd apps/api
-cp .env.example .env
+bunx prisma migrate dev
 ```
 
-Edit `.env` with your values:
+### Environment Variables
 
+**apps/api/.env:**
 ```env
-DATABASE_URL="postgresql://user:password@localhost:5432/boba_claude"
-JWT_SECRET="your-secret-key-change-in-production"
-ENCRYPTION_KEY="your-32-byte-encryption-key-change-this"
-CLAUDE_CLIENT_ID="your-claude-oauth-client-id"
-CLAUDE_CLIENT_SECRET="your-claude-oauth-client-secret"
-CLAUDE_REDIRECT_URI="http://localhost:3002/api/auth/claude-callback"
-FRONTEND_URL="http://localhost:3000"
-PORT=3002
+DATABASE_URL="postgresql://user:pass@localhost:5432/boba_claude"
+JWT_SECRET="your-secret-key"
 ```
 
-**Getting Claude OAuth Credentials:**
-1. Go to https://console.anthropic.com
-2. Navigate to your organization settings
-3. Create a new OAuth application
-4. Set redirect URI to `http://localhost:3002/api/auth/claude-callback`
-5. Copy Client ID and Client Secret to your `.env`
+**apps/daemon/.env:**
+```env
+API_URL="http://localhost:3002"
+```
 
-### 4. Run Prisma migrations
+**apps/web/.env.local:**
+```env
+NEXT_PUBLIC_API_URL="http://localhost:3002"
+NEXT_PUBLIC_WS_URL="http://localhost:3001"
+```
 
+### Running the Services
+
+**Terminal 1 - API:**
 ```bash
 cd apps/api
-pnpm prisma migrate dev --name init
-pnpm prisma generate
+bun dev  # Port 3002
 ```
 
-### 5. Configure daemon
-
-The daemon will automatically connect to the API server. Make sure to set the API_URL if not using default:
-
+**Terminal 2 - Cloud Daemon:**
 ```bash
-# In apps/daemon/.env (optional)
-API_URL=http://localhost:3002
-```
-
-### 6. Configure frontend
-
-```bash
-# In apps/web/.env.local (optional)
-NEXT_PUBLIC_WS_URL=http://localhost:3001
-NEXT_PUBLIC_API_URL=http://localhost:3002
-```
-
-## Running the Application
-
-You can run all services at once from the root:
-
-```bash
-pnpm dev
-```
-
-Or run each service individually:
-
-```bash
-# Terminal 1 - API Server
-cd apps/api
-pnpm dev
-
-# Terminal 2 - Daemon
 cd apps/daemon
-pnpm dev
+bun dev  # Port 3001
+```
 
-# Terminal 3 - Frontend
+**Terminal 3 - Web:**
+```bash
 cd apps/web
-pnpm dev
+bun dev  # Port 3000
 ```
 
-The services will be available at:
-- Frontend: http://localhost:3000
-- Daemon: http://localhost:3001 (WebSocket)
-- API: http://localhost:3002
+## SSH Configuration
 
-## Usage
+### Via Web Interface
 
-### First Time Setup
+1. Login with Phantom wallet
+2. Create a workspace with:
+   - **Host:** Your remote machine IP (e.g., `57.130.19.92`)
+   - **Port:** SSH port (default: `22`)
+   - **User:** SSH username (e.g., `rescue`)
+   - **Password:** SSH password (or use key-based auth)
+   - **Working Dir:** Claude working directory (e.g., `/home/rescue`)
 
-1. Open http://localhost:3000
-2. Click "Guest Login" to create an anonymous account
-3. Click "Connect Claude" to link your Claude subscription via OAuth
-4. A popup window will open - approve the OAuth request
-5. Once connected, you can start chatting with Claude
-
-### Creating Chat Sessions
-
-- Click "New Chat" to start a fresh conversation
-- Each chat session has its own Claude CLI process
-- Sessions persist across page refreshes
-
-### Resuming Sessions
-
-- Click "Resume Session" button
-- Paste a Claude session ID from `~/.claude/projects/`
-- The conversation history will be loaded automatically
-
-### Tool Permissions
-
-When Claude wants to use a tool (Read, Write, Bash, etc.), a permission modal will appear:
-- Click "Allow" to grant permission for that tool use
-- Click "Deny" to reject the tool use
-
-## Multi-User Architecture
-
-Each user:
-1. Creates an account (guest login or OAuth)
-2. Connects their own Claude subscription via OAuth
-3. Gets isolated chat sessions with their own Claude token
-4. Cannot access other users' sessions
-
-The daemon:
-- Authenticates WebSocket connections via JWT
-- Fetches user-specific Claude tokens from API
-- Spawns Claude CLI processes with user's token
-- Enforces session ownership
-
-## Development
-
-### Database Management
+### Via API
 
 ```bash
-# Create new migration
+curl -X POST http://localhost:3002/api/workspaces \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "my-workspace",
+    "sshHost": "57.130.19.92",
+    "sshPort": 22,
+    "sshUser": "rescue",
+    "sshPassword": "your-password",
+    "workingDir": "/home/rescue"
+  }'
+```
+
+## How It Works
+
+### Session Persistence
+
+- All messages (user + assistant) are automatically saved to PostgreSQL
+- Sessions persist across page refreshes (even cmd+shift+R)
+- Daemon restarts automatically restore sessions from DB
+
+### Message Flow
+
+1. **Create Session:**
+   - Frontend creates unique session ID
+   - Daemon establishes SSH connection
+   - Verifies Claude CLI exists on remote machine
+   - Saves session to DB
+
+2. **Send Message:**
+   - Frontend sends message with sessionId
+   - Daemon builds full conversation context
+   - Executes via SSH: `echo "<context>" | claude -p`
+   - Saves both user message and assistant response to DB
+   - Returns response to frontend
+
+3. **Multi-Session Support:**
+   - Daemon manages multiple sessions in parallel
+   - Each session has independent SSH connection
+   - Messages routed by sessionId
+   - Switch between sessions without losing context
+
+## Database Schema
+
+```prisma
+model Account {
+  id           String      @id @default(cuid())
+  publicKey    String      @unique
+  sessions     Session[]
+  workspaces   Workspace[]
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  accountId String
+  title     String    @default("New Chat")
+  messages  Message[]
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  sessionId String
+  role      String   // 'user' | 'assistant'
+  content   String
+}
+
+model Workspace {
+  id          String  @id @default(cuid())
+  accountId   String
+  name        String
+  sshHost     String
+  sshPort     Int
+  sshUser     String
+  sshPassword String?
+  workingDir  String
+  isActive    Boolean @default(true)
+}
+```
+
+## Authentication
+
+### Phantom Wallet OAuth
+
+1. User clicks "Connect with Phantom"
+2. Signs message with wallet
+3. API generates JWT token
+4. Token stored in localStorage
+5. WebSocket authenticates with token
+
+## Debugging
+
+### View Daemon Logs
+
+```bash
+cd apps/daemon
+bun dev
+
+# Look for:
+# [Cloud Daemon] Session ready: session-1234
+# [Cloud Daemon] Received message for session session-1234
+```
+
+### View Frontend Logs
+
+Open browser console:
+```
+[Frontend] Socket.IO connected
+[Frontend] Creating session: session-1234
+[Frontend] Sending message for session session-1234
+[Frontend] Received output for session session-1234
+```
+
+### Inspect Database
+
+```bash
 cd apps/api
-pnpm prisma migrate dev --name <migration_name>
-
-# Open Prisma Studio
-pnpm prisma studio
-
-# Reset database
-pnpm prisma migrate reset
+bunx prisma studio  # Opens at http://localhost:5555
 ```
 
-### Building for Production
+## Requirements
 
-```bash
-# Build all apps
-pnpm build
+### Remote Machine
 
-# Start production servers
-pnpm start
+- Claude CLI installed (checked paths: `/usr/bin/claude`, `/usr/local/bin/claude`, `/home/rescue/.local/bin/claude`)
+- SSH access (password or key-based)
+- Working directory with proper permissions
+
+### VPS/Local Machine
+
+- Node.js 18+ or Bun
+- PostgreSQL database
+- SSH client
+- SSH keys (auto-detected from `~/.ssh/id_ed25519`, `id_rsa`, `id_ecdsa`)
+
+## Deployment
+
+### Production Setup
+
+1. **API Server:**
+   ```bash
+   cd apps/api
+   bun run build
+   bun start
+   ```
+
+2. **Cloud Daemon:**
+   ```bash
+   cd apps/daemon
+   bun run build
+   bun start
+   ```
+
+3. **Web App:**
+   ```bash
+   cd apps/web
+   bun run build
+   bun start
+   ```
+
+### Environment Variables (Production)
+
+Update URLs to production domains:
+- `API_URL`: Your API domain
+- `NEXT_PUBLIC_API_URL`: Your API domain (public)
+- `NEXT_PUBLIC_WS_URL`: Your WebSocket daemon domain
+- `DATABASE_URL`: PostgreSQL connection string
+
+## Project Structure
+
+```
+Boba-Claude/
+├── apps/
+│   ├── api/          # Fastify API (auth, sessions, workspaces)
+│   │   ├── prisma/   # Database schema & migrations
+│   │   └── src/
+│   ├── daemon/       # Cloud daemon (SSH + Socket.IO)
+│   │   └── src/
+│   │       ├── cloud-daemon.ts   # Main daemon
+│   │       └── ssh-executor.ts   # SSH client
+│   ├── web/          # Next.js frontend
+│   │   └── src/
+│   └── cli/          # CLI tool (bonus)
+└── README.md
 ```
 
-## Security Notes
+## Contributing
 
-- User tokens are encrypted at rest using AES-256-GCM
-- JWT tokens are used for session management
-- Each user's Claude processes are isolated
-- WebSocket connections require authentication
-- CORS is configured for security
-
-## Troubleshooting
-
-### "Authentication required" error
-- Make sure you've clicked "Guest Login" first
-- Check that the API server is running on port 3002
-
-### "No Claude account connected" error
-- Click "Connect Claude" and complete OAuth flow
-- Verify your Claude OAuth credentials in `apps/api/.env`
-
-### Sessions not loading
-- Check that daemon is running and accessible
-- Verify WebSocket connection in browser console
-- Ensure you're logged in with valid JWT token
-
-### Database connection errors
-- Verify PostgreSQL is running
-- Check DATABASE_URL in `apps/api/.env`
-- Run `pnpm prisma migrate dev` to apply migrations
+1. Fork the repo
+2. Create feature branch
+3. Commit changes
+4. Push to branch
+5. Open Pull Request
 
 ## License
 
