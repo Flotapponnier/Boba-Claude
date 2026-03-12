@@ -148,31 +148,49 @@ bun run dev:local  # Local mode
 - Expose local Claude via ngrok/Coder port forwarding
 
 **Requirements:**
-- Claude CLI installed: `npm install -g @anthropic/claude`
-- Claude in PATH or at `/usr/local/bin/claude`
+- Claude CLI installed (see installation below)
+- No PostgreSQL database required (sessions stored in memory)
+
+**Installing Claude CLI:**
+```bash
+# macOS/Linux
+curl -fsSL https://claude.ai/install.sh | bash
+
+# Windows
+irm https://claude.ai/install.ps1 | iex
+```
+
+After installation, add to PATH:
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+```
 
 ## How It Works
 
 ### Session Persistence
 
+**SSH Mode:**
 - All messages (user + assistant) are automatically saved to PostgreSQL
 - Sessions persist across page refreshes (even cmd+shift+R)
 - Daemon restarts automatically restore sessions from DB
+
+**Local Mode:**
+- Sessions stored in memory only (no database required)
+- Sessions lost on daemon restart
+- Perfect for development and quick testing
 
 ### Message Flow
 
 1. **Create Session:**
    - Frontend creates unique session ID
-   - **SSH Mode:** Daemon establishes SSH connection to remote machine
-   - **Local Mode:** Daemon verifies Claude CLI is installed locally
-   - Saves session to DB
+   - **SSH Mode:** Daemon establishes SSH connection to remote machine, saves to DB
+   - **Local Mode:** Daemon verifies Claude CLI is installed locally, stores in memory
 
 2. **Send Message:**
    - Frontend sends message with sessionId
    - Daemon builds full conversation context
-   - **SSH Mode:** Executes via SSH: `ssh user@host "echo '<context>' | claude -p"`
-   - **Local Mode:** Executes locally: `echo '<context>' | claude -p`
-   - Saves both user message and assistant response to DB
+   - **SSH Mode:** Executes via SSH: `ssh user@host "echo '<context>' | claude -p"`, saves to DB
+   - **Local Mode:** Executes locally: `echo '<context>' | claude -p`, stores in memory
    - Returns response to frontend
 
 3. **Multi-Session Support:**
