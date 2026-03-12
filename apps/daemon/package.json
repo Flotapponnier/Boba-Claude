@@ -3,11 +3,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/cloud-daemon.ts",
-    "dev:local": "LOCAL_MODE=true tsx watch src/cloud-daemon.ts",
+    "relay": "tsx watch src/cloud-relay.ts",
+    "daemon": "tsx watch src/user-daemon.ts",
+    "dev": "tsx watch src/cloud-relay.ts",
+    "dev:old": "tsx watch src/cloud-daemon.ts",
     "build": "tsc",
-    "start": "node dist/cloud-daemon.js",
-    "start:local": "LOCAL_MODE=true node dist/cloud-daemon.js"
+    "start": "node dist/cloud-relay.js",
+    "start:daemon": "node dist/user-daemon.js"
   },
   "dependencies": {
     "@prisma/client": "^7.5.0",

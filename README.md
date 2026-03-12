@@ -4,17 +4,26 @@ Cloud-based Claude CLI interface with SSH architecture and persistent sessions.
 
 ## Architecture
 
-**3 main components:**
+**Inspired by Happy CLI - Multi-user architecture with per-user isolation**
+
+**4 main components:**
 1. **Web App** (Next.js) - User interface
-2. **API** (Fastify + PostgreSQL) - Auth, sessions, workspaces
-3. **Cloud Daemon** (Node.js + Socket.IO) - Manages Claude sessions via SSH
+2. **API** (Fastify + PostgreSQL) - Auth (Phantom wallet OAuth)
+3. **Cloud Relay** (Socket.IO Server) - Routes users to their personal daemons
+4. **User Daemon** (Socket.IO Client) - Runs in user's workspace, spawns Claude sessions
 
 **Flow:**
 ```
-Browser → WebSocket → Cloud Daemon (VPS) → SSH → Remote Machine (Claude CLI)
-                         ↓
-                   PostgreSQL (persistence)
+Browser → Cloud Relay (VPS) → User's Daemon (Coder/Local) → Claude CLI
+            ↓                         ↓
+       PostgreSQL              User's code/workspace
+    (auth, routing)           (fully isolated)
 ```
+
+**Key difference from old architecture:**
+- OLD: One shared daemon for all users ❌
+- NEW: Each user runs their OWN daemon in THEIR workspace ✅
+- Each user has access to THEIR code only (like Happy CLI)
 
 ## Quick Start
 
@@ -69,22 +78,37 @@ NEXT_PUBLIC_WS_URL="http://localhost:3001"
 
 ### Running the Services
 
-**Terminal 1 - API:**
+**NEW Architecture (Recommended):**
+
+**Terminal 1 - API (VPS/Server):**
 ```bash
 cd apps/api
 bun dev  # Port 3002
 ```
 
-**Terminal 2 - Cloud Daemon:**
+**Terminal 2 - Cloud Relay (VPS/Server):**
 ```bash
 cd apps/daemon
-bun dev  # Port 3001
+bun relay  # Port 3001 - routes users to their daemons
 ```
 
-**Terminal 3 - Web:**
+**Terminal 3 - Web (VPS/Server or Local):**
 ```bash
 cd apps/web
 bun dev  # Port 3000
+```
+
+**Terminal 4 - User Daemon (YOUR Coder workspace/laptop):**
+```bash
+cd apps/daemon
+# Get your token from web interface after logging in with Phantom
+USER_AUTH_TOKEN="your-jwt-token" bun daemon
+```
+
+**OLD Architecture (Shared daemon - deprecated):**
+```bash
+cd apps/daemon
+bun dev:old  # Single shared daemon (not recommended)
 ```
 
 ## SSH Configuration

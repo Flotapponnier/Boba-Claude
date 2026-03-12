@@ -72,12 +72,44 @@ async function main() {
       console.log(`[Cloud Relay] Daemon connected for user ${userId}`)
       machineRegistry.set(userId, socket)
 
+      // Forward all daemon events to user's frontends
+      socket.on('session_ready', (data: any) => {
+        console.log(`[Cloud Relay] Forwarding session_ready to frontends for user ${userId}`)
+        broadcastToUserFrontends(userId, 'session_ready', data)
+      })
+
+      socket.on('session_ended', (data: any) => {
+        broadcastToUserFrontends(userId, 'session_ended', data)
+      })
+
+      socket.on('session_cancelled', (data: any) => {
+        broadcastToUserFrontends(userId, 'session_cancelled', data)
+      })
+
+      socket.on('session_history', (data: any) => {
+        broadcastToUserFrontends(userId, 'session_history', data)
+      })
+
+      socket.on('claude_message', (data: any) => {
+        console.log(`[Cloud Relay] Forwarding claude_message to frontends for user ${userId}`)
+        broadcastToUserFrontends(userId, 'output', data)
+      })
+
       socket.on('disconnect', () => {
         console.log(`[Cloud Relay] Daemon disconnected for user ${userId}`)
         machineRegistry.delete(userId)
       })
 
       return
+    }
+
+    // Helper function to broadcast to all frontends for a user
+    function broadcastToUserFrontends(targetUserId: string, event: string, data: any) {
+      for (const [frontendSocket, frontendUserId] of frontendConnections.entries()) {
+        if (frontendUserId === targetUserId && frontendSocket.connected) {
+          frontendSocket.emit(event, data)
+        }
+      }
     }
 
     // Handle frontend connections
@@ -131,35 +163,8 @@ async function main() {
       daemon.emit('user_message', data)
     })
 
-    // Forward daemon responses back to frontend
-    if (daemonSocket) {
-      // Remove existing listeners to avoid duplicates
-      daemonSocket.removeAllListeners('claude_message')
-      daemonSocket.removeAllListeners('session_ready')
-      daemonSocket.removeAllListeners('session_ended')
-      daemonSocket.removeAllListeners('session_history')
-      daemonSocket.removeAllListeners('session_cancelled')
-
-      daemonSocket.on('claude_message', (data: any) => {
-        socket.emit('claude_message', data)
-      })
-
-      daemonSocket.on('session_ready', (data: any) => {
-        socket.emit('session_ready', data)
-      })
-
-      daemonSocket.on('session_ended', (data: any) => {
-        socket.emit('session_ended', data)
-      })
-
-      daemonSocket.on('session_history', (data: any) => {
-        socket.emit('session_history', data)
-      })
-
-      daemonSocket.on('session_cancelled', (data: any) => {
-        socket.emit('session_cancelled', data)
-      })
-    }
+    // Listen for daemon messages and forward to all frontends for this user
+    // This is handled globally below, not per frontend connection
 
     socket.on('disconnect', () => {
       console.log(`[Cloud Relay] Frontend disconnected for user ${userId}`)
