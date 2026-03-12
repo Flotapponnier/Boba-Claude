@@ -69,20 +69,32 @@ export class LocalExecutor {
       throw new Error('Session already running')
     }
 
-    // Resolve symlink to actual cli.js
+    // Resolve Claude CLI path
     let resolvedPath = this.claudePath
+
+    // If not an absolute path, try to find it in PATH
+    if (!resolvedPath.startsWith('/')) {
+      const { execSync } = await import('child_process')
+      try {
+        resolvedPath = execSync(`which ${this.claudePath}`, { encoding: 'utf-8' }).trim()
+      } catch (error) {
+        // which failed, try as-is
+      }
+    }
+
+    // Now try to resolve symlink
     try {
-      if (existsSync(this.claudePath)) {
-        const realPath = readlinkSync(this.claudePath)
+      if (existsSync(resolvedPath)) {
+        const realPath = readlinkSync(resolvedPath)
         if (!realPath.startsWith('/')) {
           const path = await import('path')
-          resolvedPath = path.join(path.dirname(this.claudePath), realPath)
+          resolvedPath = path.join(path.dirname(resolvedPath), realPath)
         } else {
           resolvedPath = realPath
         }
       }
     } catch {
-      // Not a symlink, use original
+      // Not a symlink, use resolved path as-is
     }
 
     console.log(`[Local Executor] Starting Claude with Happy CLI wrapper: ${resolvedPath}`)
