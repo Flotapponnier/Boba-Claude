@@ -179,30 +179,52 @@ export function useClaude() {
 
       socket.on('output', (data: { sessionId: string; content: string }) => {
         const currentSession = useChatStore.getState().currentSessionId
-        console.log(`[Frontend] Received output for session ${data.sessionId}:`, data.content)
+        console.log(`[Frontend] Received output for session ${data.sessionId}:`, data.content?.substring(0, 200))
 
-        // IMPORTANT: Save message to the correct session, even if it's not the active one
-        const { sessions, currentSessionId } = useChatStore.getState()
-        const targetSession = sessions[data.sessionId]
+        // Parse the stream-json content from Claude CLI
+        try {
+          const lines = data.content.split('\n').filter((line: string) => line.trim())
 
-        if (targetSession) {
-          // Temporarily switch to target session to add message
-          const wasCurrentSession = currentSessionId
-          useChatStore.getState().switchSession(data.sessionId)
+          for (const line of lines) {
+            try {
+              const msg = JSON.parse(line)
 
-          addMessage({
-            role: 'assistant',
-            content: data.content,
-          })
+              // Extract text from assistant messages
+              if (msg.type === 'assistant' && msg.message?.content) {
+                const content = Array.isArray(msg.message.content)
+                  ? msg.message.content.find((c: any) => c.type === 'text')?.text
+                  : msg.message.content
 
-          // Switch back to original session
-          if (wasCurrentSession && wasCurrentSession !== data.sessionId) {
-            useChatStore.getState().switchSession(wasCurrentSession)
+                if (content) {
+                  const { sessions, currentSessionId } = useChatStore.getState()
+                  const targetSession = sessions[data.sessionId]
+
+                  if (targetSession) {
+                    // Temporarily switch to target session to add message
+                    const wasCurrentSession = currentSessionId
+                    useChatStore.getState().switchSession(data.sessionId)
+
+                    addMessage({
+                      role: 'assistant',
+                      content: content,
+                    })
+
+                    // Switch back to original session
+                    if (wasCurrentSession && wasCurrentSession !== data.sessionId) {
+                      useChatStore.getState().switchSession(wasCurrentSession)
+                    }
+
+                    setLoading(data.sessionId, false)
+                  }
+                }
+              }
+            } catch (err) {
+              // Not JSON, skip this line
+              console.debug('[Frontend] Skipping non-JSON line:', line.substring(0, 100))
+            }
           }
-
-          setLoading(data.sessionId, false)
-        } else {
-          console.warn(`[Frontend] Received output for unknown session ${data.sessionId}`)
+        } catch (error) {
+          console.error('[Frontend] Error parsing stream-json output:', error)
         }
       })
 

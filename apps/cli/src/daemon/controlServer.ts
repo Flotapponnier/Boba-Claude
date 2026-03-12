@@ -2,7 +2,7 @@ import Fastify from 'fastify'
 
 interface ControlServerOptions {
   onSpawnSession: (directory: string, sessionId: string) => Promise<{ sessionId: string }>
-  onStopSession: (sessionId: string) => boolean
+  onStopSession: (sessionId: string) => Promise<boolean>
 }
 
 export async function startControlServer(options: ControlServerOptions) {
@@ -26,7 +26,7 @@ export async function startControlServer(options: ControlServerOptions) {
 
   // Stop session
   app.post<{ Body: { sessionId: string } }>('/stop', async (request, reply) => {
-    const success = options.onStopSession(request.body.sessionId)
+    const success = await options.onStopSession(request.body.sessionId)
     return { success }
   })
 

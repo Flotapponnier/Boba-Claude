@@ -95,37 +95,10 @@ async function main() {
       })
 
       socket.on('claude_message', (data: any) => {
-        console.log(`[Cloud Relay] Received claude_message from daemon for user ${userId}`)
+        console.log(`[Cloud Relay] Received claude_message from daemon:`, data.content?.substring(0, 200))
 
-        // Parse the stream-json content and extract clean text
-        try {
-          const lines = data.content.split('\n').filter((line: string) => line.trim())
-
-          for (const line of lines) {
-            try {
-              const msg = JSON.parse(line)
-
-              // Only forward text content from assistant messages
-              if (msg.type === 'assistant' && msg.message?.content) {
-                const content = Array.isArray(msg.message.content)
-                  ? msg.message.content.find((c: any) => c.type === 'text')?.text
-                  : msg.message.content
-
-                if (content) {
-                  console.log(`[Cloud Relay] Forwarding clean text to frontends`)
-                  broadcastToUserFrontends(userId, 'output', {
-                    sessionId: data.sessionId,
-                    content: content
-                  })
-                }
-              }
-            } catch {
-              // Not JSON, skip
-            }
-          }
-        } catch (error) {
-          console.error('[Cloud Relay] Error parsing claude_message:', error)
-        }
+        // Just forward the raw content - let the local-executor handle filtering
+        broadcastToUserFrontends(userId, 'output', data)
       })
 
       socket.on('permission_request', (data: any) => {

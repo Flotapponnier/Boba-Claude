@@ -5,6 +5,7 @@ import { spawn, ChildProcess } from 'child_process'
 import { io, Socket } from 'socket.io-client'
 import { startControlServer } from './controlServer.js'
 import chalk from 'chalk'
+import { LocalExecutor } from './local-executor.js'
 
 const CONFIG_DIR = path.join(os.homedir(), '.boba')
 const STATE_FILE = path.join(CONFIG_DIR, 'daemon.json')
@@ -16,12 +17,12 @@ interface DaemonState {
 }
 
 interface TrackedSession {
-  pid: number
-  sessionId: string | null
-  process: ChildProcess
+  sessionId: string
+  executor: LocalExecutor
+  workingDir: string
 }
 
-const sessions = new Map<number, TrackedSession>()
+const sessions = new Map<string, TrackedSession>()
 
 export async function startDaemon(authToken: string) {
   // Check if already running
@@ -73,27 +74,49 @@ export async function startDaemon(authToken: string) {
 
   socket.on('stop_session', async (data: { sessionId: string }, callback) => {
     console.log(chalk.blue(`🛑 Stopping session ${data.sessionId}`))
-    const success = stopSession(data.sessionId)
+    const success = await stopSession(data.sessionId)
     callback({ success })
   })
 
-  // Handle user messages from cloud
-  socket.on('user_message', (data: { sessionId: string; content: string }) => {
-    console.log(chalk.blue(`💬 Message for session ${data.sessionId}`))
-    const session = sessions.get(Number(Object.keys(sessions).find(pid => {
-      const s = sessions.get(Number(pid))
-      return s?.sessionId === data.sessionId
-    })))
+  socket.on('cancel_session', async (data: { sessionId: string }) => {
+    console.log(chalk.blue(`🚫 Cancelling session ${data.sessionId}`))
+    await stopSession(data.sessionId)
+    // Respawn
+    try {
+      const result = await spawnClaudeSession(process.env.DEFAULT_WORKSPACE_DIR || '/tmp/boba-sessions', data.sessionId, socket)
+      socket.emit('session_cancelled', { sessionId: data.sessionId })
+    } catch (error: any) {
+      socket.emit('error', { sessionId: data.sessionId, error: error.message })
+    }
+  })
 
-    if (session?.process.stdin) {
-      const message = JSON.stringify({
-        type: 'user',
-        message: {
-          role: 'user',
-          content: data.content
-        }
-      })
-      session.process.stdin.write(message + '\n')
+  // Handle user messages from cloud
+  socket.on('user_message', async (data: { sessionId: string; content: string }) => {
+    console.log(chalk.blue(`💬 Message for session ${data.sessionId}`))
+    const session = sessions.get(data.sessionId)
+
+    if (session) {
+      try {
+        await session.executor.sendMessage(data.content)
+      } catch (error: any) {
+        console.error(chalk.red(`❌ Failed to send message: ${error.message}`))
+        socket.emit('error', { sessionId: data.sessionId, error: error.message })
+      }
+    } else {
+      console.error(chalk.red(`❌ Session ${data.sessionId} not found`))
+      socket.emit('error', { sessionId: data.sessionId, error: 'Session not found' })
+    }
+  })
+
+  // Handle permission responses from cloud
+  socket.on('permission_response', (data: { sessionId: string; requestId: string; approved: boolean }) => {
+    console.log(chalk.blue(`🔐 Permission response for session ${data.sessionId}: ${data.approved ? 'approved' : 'denied'}`))
+    const session = sessions.get(data.sessionId)
+
+    if (session) {
+      session.executor.respondToPermission(data.requestId, data.approved)
+    } else {
+      console.error(chalk.red(`❌ Session ${data.sessionId} not found`))
     }
   })
 
@@ -162,105 +185,86 @@ async function spawnClaudeSession(directory: string, sessionId: string, cloudSoc
     await fs.mkdir(directory, { recursive: true })
   }
 
-  // Spawn Claude CLI
-  const claudeProcess = spawn('claude', [], {
-    cwd: directory,
-    detached: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
+  console.log(chalk.gray(`  Creating session ${sessionId} in ${directory}`))
+
+  // Create LocalExecutor instance
+  const executor = new LocalExecutor({
+    workingDir: directory,
+    claudePath: 'claude',
+    nodePath: 'node',
   })
 
-  if (!claudeProcess.pid) {
-    throw new Error('Failed to spawn Claude process')
-  }
-
-  console.log(chalk.gray(`  Spawned Claude PID: ${claudeProcess.pid}`))
-
-  // Track session
-  sessions.set(claudeProcess.pid, {
-    pid: claudeProcess.pid,
-    sessionId,
-    process: claudeProcess,
-  })
-
-  // Forward Claude output to cloud
-  if (cloudSocket) {
-    claudeProcess.stdout?.on('data', (data) => {
-      const lines = data.toString().split('\n').filter((line: string) => line.trim())
-      for (const line of lines) {
-        try {
-          const message = JSON.parse(line)
-
-          // Forward system/init messages
-          if (message.type === 'system' && message.subtype === 'init') {
-            cloudSocket.emit('session_ready', {
-              sessionId,
-              claudeSessionId: message.session_id,
-            })
-          }
-
-          // Forward assistant messages
-          if (message.type === 'assistant') {
-            const messageObj = message.message
-            if (messageObj && Array.isArray(messageObj.content)) {
-              const text = messageObj.content
-                .filter((c: any) => c.type === 'text')
-                .map((c: any) => c.text)
-                .join('')
-
-              if (text) {
-                cloudSocket.emit('claude_message', {
-                  sessionId,
-                  message: {
-                    type: 'text',
-                    text,
-                    role: 'assistant',
-                  },
-                })
-              }
-
-              const toolUses = messageObj.content.filter((c: any) => c.type === 'tool_use')
-              for (const toolUse of toolUses) {
-                cloudSocket.emit('claude_message', {
-                  sessionId,
-                  tool: {
-                    type: 'tool_use',
-                    id: toolUse.id,
-                    name: toolUse.name,
-                    input: toolUse.input,
-                  },
-                })
-              }
-            }
-          }
-        } catch (e) {
-          console.log(`[Claude ${sessionId}]`, line)
-        }
-      }
-    })
-  }
-
-  // Handle exit
-  claudeProcess.on('exit', (code) => {
-    sessions.delete(claudeProcess.pid!)
+  // Set up permission callback
+  executor.setPermissionCallback((request) => {
+    console.log(chalk.yellow(`🔐 Permission request: ${request.toolName}`))
     if (cloudSocket) {
-      cloudSocket.emit('session_ended', { sessionId, code })
+      cloudSocket.emit('permission_request', {
+        sessionId,
+        requestId: request.requestId,
+        toolName: request.toolName,
+        input: request.input,
+      })
     }
   })
+
+  // Connect and start session
+  await executor.connect()
+
+  await executor.startInteractiveSession({
+    onOutput: (data) => {
+      // Forward raw stream-json output to cloud
+      if (cloudSocket) {
+        cloudSocket.emit('claude_message', {
+          sessionId,
+          content: data,
+        })
+      }
+    },
+    onError: (data) => {
+      console.error(chalk.red(`[Claude ${sessionId}]`), data)
+    },
+    onExit: (code) => {
+      console.log(chalk.gray(`  Session ${sessionId} exited with code ${code}`))
+      sessions.delete(sessionId)
+      if (cloudSocket) {
+        cloudSocket.emit('session_ended', { sessionId, code })
+      }
+    },
+  })
+
+  // Track session
+  sessions.set(sessionId, {
+    sessionId,
+    executor,
+    workingDir: directory,
+  })
+
+  console.log(chalk.green(`✓ Session ${sessionId} ready`))
+
+  // Notify cloud
+  if (cloudSocket) {
+    cloudSocket.emit('session_ready', {
+      sessionId,
+      claudeSessionId: sessionId,
+    })
+  }
 
   return { sessionId }
 }
 
-function stopSession(sessionId: string): boolean {
-  for (const [pid, session] of sessions.entries()) {
-    if (session.sessionId === sessionId) {
-      try {
-        session.process.kill('SIGTERM')
-        sessions.delete(pid)
-        return true
-      } catch {
-        return false
-      }
+async function stopSession(sessionId: string): Promise<boolean> {
+  const session = sessions.get(sessionId)
+  if (session) {
+    try {
+      await session.executor.disconnect()
+      sessions.delete(sessionId)
+      console.log(chalk.gray(`  Stopped session ${sessionId}`))
+      return true
+    } catch (error: any) {
+      console.error(chalk.red(`❌ Failed to stop session ${sessionId}: ${error.message}`))
+      return false
     }
   }
+  console.error(chalk.red(`❌ Session ${sessionId} not found`))
   return false
 }
