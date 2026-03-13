@@ -530,20 +530,29 @@ export default function HomePage() {
                 Session:
               </span>
               <code
-                className="text-xs font-mono px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
+                className="text-xs font-mono px-2 py-1 rounded"
                 style={{
                   backgroundColor: 'var(--bg-secondary)',
                   color: 'var(--text-secondary)',
                   opacity: 0.6,
                 }}
-                onClick={() => {
-                  navigator.clipboard.writeText(currentSessionId)
-                  // Optional: show a toast or feedback
-                }}
-                title="Click to copy session ID"
               >
                 {currentSessionId.substring(0, 8)}...{currentSessionId.substring(currentSessionId.length - 4)}
               </code>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(currentSessionId)
+                }}
+                className="text-xs px-2 py-1 rounded hover:opacity-80 transition-opacity"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: '#ffffff',
+                  opacity: 0.7,
+                }}
+                title="Copy full session ID"
+              >
+                Copy
+              </button>
             </div>
           )}
           <div className="flex gap-2">
