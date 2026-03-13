@@ -523,6 +523,29 @@ export default function HomePage() {
 
         {/* Input Area */}
         <div className="p-4 md:p-6 border-t max-w-4xl mx-auto w-full" style={{ borderColor: 'var(--bg-secondary)' }}>
+          {/* Session ID Display */}
+          {currentSessionId && (
+            <div className="flex items-center gap-2 mb-2 px-2">
+              <span className="text-xs" style={{ color: 'var(--text-secondary)', opacity: 0.6 }}>
+                Session:
+              </span>
+              <code
+                className="text-xs font-mono px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
+                style={{
+                  backgroundColor: 'var(--bg-secondary)',
+                  color: 'var(--text-secondary)',
+                  opacity: 0.6,
+                }}
+                onClick={() => {
+                  navigator.clipboard.writeText(currentSessionId)
+                  // Optional: show a toast or feedback
+                }}
+                title="Click to copy session ID"
+              >
+                {currentSessionId.substring(0, 8)}...{currentSessionId.substring(currentSessionId.length - 4)}
+              </code>
+            </div>
+          )}
           <div className="flex gap-2">
             <input
               type="text"
