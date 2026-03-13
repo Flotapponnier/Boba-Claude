@@ -119,6 +119,12 @@ export function useClaude() {
         console.log(`[Frontend] Session ready: ${data.sessionId} (Claude ID: ${data.claudeSessionId})`)
       })
 
+      // Claude session ID received
+      socket.on('claude_session_id', (data: { sessionId: string; claudeSessionId: string }) => {
+        console.log(`[Frontend] Received Claude session ID for ${data.sessionId}: ${data.claudeSessionId}`)
+        useChatStore.getState().setClaudeSessionId(data.sessionId, data.claudeSessionId)
+      })
+
       // Session ended event - Claude process terminated
       socket.on('session_ended', (data: { sessionId: string; code: number }) => {
         console.log(`[Frontend] Session ended: ${data.sessionId} with code ${data.code}`)

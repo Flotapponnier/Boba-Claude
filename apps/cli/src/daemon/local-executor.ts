@@ -15,6 +15,7 @@ export interface LocalExecutorConfig {
   workingDir: string
   claudePath?: string
   nodePath?: string // Absolute path to node binary
+  resumeFrom?: string // Session ID to resume from
 }
 
 interface PermissionRequest {
@@ -34,10 +35,16 @@ export class LocalExecutor {
   private process: ChildProcess | null = null
   private pendingPermissions = new Map<string, PendingPermission>()
   private onPermissionRequest?: (request: PermissionRequest) => void
+  private onSessionIdReceived?: (sessionId: string) => void
+  private claudeSessionId?: string
 
   constructor(config: LocalExecutorConfig) {
     this.config = config
     this.claudePath = config.claudePath || 'claude'
+  }
+
+  setSessionIdCallback(callback: (sessionId: string) => void) {
+    this.onSessionIdReceived = callback
   }
 
   setPermissionCallback(callback: (request: PermissionRequest) => void) {
@@ -115,15 +122,24 @@ export class LocalExecutor {
 
     console.log(`[Local Executor] Using wrapper: ${wrapperPath}`)
 
-    // Spawn Claude CLI with Happy CLI wrapper in programmatic mode
-    this.process = spawn(nodePath, [
+    // Build CLI args
+    const args = [
       wrapperPath,
       resolvedPath,
       '--output-format=stream-json',
       '--input-format=stream-json',
       '--permission-prompt-tool=stdio',
       '--verbose'
-    ], {
+    ]
+
+    // Add resume flag if resuming a session
+    if (this.config.resumeFrom) {
+      console.log(`[Local Executor] Resuming session: ${this.config.resumeFrom}`)
+      args.push('--resume', this.config.resumeFrom)
+    }
+
+    // Spawn Claude CLI with Happy CLI wrapper in programmatic mode
+    this.process = spawn(nodePath, args, {
       cwd: this.config.workingDir,
       env: {
         ...process.env,
@@ -143,6 +159,15 @@ export class LocalExecutor {
 
         try {
           const msg = JSON.parse(line)
+
+          // Capture session ID from system messages
+          if (msg.type === 'system' && msg.session_id && !this.claudeSessionId) {
+            this.claudeSessionId = msg.session_id
+            console.log(`[Local Executor] Captured Claude session ID: ${this.claudeSessionId}`)
+            if (this.onSessionIdReceived) {
+              this.onSessionIdReceived(this.claudeSessionId)
+            }
+          }
 
           // Handle permission requests (control_request) - don't forward to frontend
           if (msg.type === 'control_request' && msg.request?.subtype === 'can_use_tool') {

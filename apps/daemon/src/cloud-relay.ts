@@ -99,6 +99,11 @@ async function main() {
         broadcastToUserFrontends(userId, 'output', data)
       })
 
+      socket.on('claude_session_id', (data: any) => {
+        console.log(`[Cloud Relay] Forwarding Claude session ID to frontends for user ${userId}`)
+        broadcastToUserFrontends(userId, 'claude_session_id', data)
+      })
+
       socket.on('permission_request', (data: any) => {
         console.log(`[Cloud Relay] Forwarding permission_request to frontends for user ${userId}`)
         broadcastToUserFrontends(userId, 'permission_request', data)
@@ -137,7 +142,7 @@ async function main() {
 
     // Forward create_session to daemon
     socket.on('create_session', (data: { sessionId: string; resumeFrom?: string }) => {
-      console.log(`[Cloud Relay] Forwarding create_session to daemon for user ${userId}`)
+      console.log(`[Cloud Relay] Forwarding create_session to daemon for user ${userId}${data.resumeFrom ? ` (resume: ${data.resumeFrom})` : ''}`)
       const daemon = machineRegistry.get(userId)
       if (!daemon) {
         socket.emit('error', { error: 'No daemon connected' })
@@ -145,7 +150,8 @@ async function main() {
       }
       daemon.emit('spawn_session', {
         sessionId: data.sessionId,
-        directory: process.env.DEFAULT_WORKSPACE_DIR || '/tmp/boba-sessions'
+        directory: process.env.DEFAULT_WORKSPACE_DIR || '/tmp/boba-sessions',
+        resumeFrom: data.resumeFrom
       }, (response: any) => {
         if (response.success) {
           socket.emit('session_ready', { sessionId: data.sessionId })

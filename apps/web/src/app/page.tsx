@@ -524,7 +524,7 @@ export default function HomePage() {
         {/* Input Area */}
         <div className="p-4 md:p-6 border-t max-w-4xl mx-auto w-full" style={{ borderColor: 'var(--bg-secondary)' }}>
           {/* Session ID Display */}
-          {currentSessionId && (
+          {currentSessionId && currentSession?.claudeSessionId && (
             <div className="flex items-center gap-2 mb-2 px-2">
               <span className="text-xs" style={{ color: 'var(--text-secondary)', opacity: 0.6 }}>
                 Session:
@@ -537,11 +537,11 @@ export default function HomePage() {
                   opacity: 0.6,
                 }}
               >
-                {currentSessionId.substring(0, 8)}...{currentSessionId.substring(currentSessionId.length - 4)}
+                {currentSession.claudeSessionId.substring(0, 8)}...{currentSession.claudeSessionId.substring(currentSession.claudeSessionId.length - 4)}
               </code>
               <button
                 onClick={() => {
-                  navigator.clipboard.writeText(currentSessionId)
+                  navigator.clipboard.writeText(currentSession.claudeSessionId)
                 }}
                 className="text-xs px-2 py-1 rounded hover:opacity-80 transition-opacity"
                 style={{
@@ -549,7 +549,7 @@ export default function HomePage() {
                   color: '#ffffff',
                   opacity: 0.7,
                 }}
-                title="Copy full session ID"
+                title="Copy Claude session ID for resume"
               >
                 Copy
               </button>

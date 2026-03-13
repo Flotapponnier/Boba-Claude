@@ -62,10 +62,10 @@ export async function startDaemon(authToken: string) {
   })
 
   // Register RPC handlers
-  socket.on('spawn_session', async (data: { sessionId: string; directory: string }, callback) => {
+  socket.on('spawn_session', async (data: { sessionId: string; directory: string; resumeFrom?: string }, callback) => {
     console.log(chalk.blue(`📂 Spawning session in ${data.directory}`))
     try {
-      const result = await spawnClaudeSession(data.directory, data.sessionId, socket)
+      const result = await spawnClaudeSession(data.directory, data.sessionId, socket, data.resumeFrom)
       callback({ success: true, sessionId: result.sessionId })
     } catch (error: any) {
       callback({ success: false, error: error.message })
@@ -176,7 +176,7 @@ export async function getDaemonStatus(): Promise<{ running: boolean; pid?: numbe
   }
 }
 
-async function spawnClaudeSession(directory: string, sessionId: string, cloudSocket?: any): Promise<{ sessionId: string }> {
+async function spawnClaudeSession(directory: string, sessionId: string, cloudSocket?: any, resumeFrom?: string): Promise<{ sessionId: string }> {
   // Check if directory exists
   try {
     await fs.access(directory)
@@ -185,13 +185,14 @@ async function spawnClaudeSession(directory: string, sessionId: string, cloudSoc
     await fs.mkdir(directory, { recursive: true })
   }
 
-  console.log(chalk.gray(`  Creating session ${sessionId} in ${directory}`))
+  console.log(chalk.gray(`  Creating session ${sessionId} in ${directory}${resumeFrom ? ` (resuming ${resumeFrom})` : ''}`))
 
   // Create LocalExecutor instance
   const executor = new LocalExecutor({
     workingDir: directory,
     claudePath: 'claude',
     nodePath: 'node',
+    resumeFrom,
   })
 
   // Set up permission callback
@@ -203,6 +204,17 @@ async function spawnClaudeSession(directory: string, sessionId: string, cloudSoc
         requestId: request.requestId,
         toolName: request.toolName,
         input: request.input,
+      })
+    }
+  })
+
+  // Set up session ID callback to capture Claude's real session ID
+  executor.setSessionIdCallback((claudeSessionId) => {
+    console.log(chalk.blue(`📋 Claude session ID: ${claudeSessionId}`))
+    if (cloudSocket) {
+      cloudSocket.emit('claude_session_id', {
+        sessionId,
+        claudeSessionId,
       })
     }
   })
