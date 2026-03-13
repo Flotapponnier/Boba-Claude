@@ -5,12 +5,26 @@ interface ControlServerOptions {
   onStopSession: (sessionId: string) => Promise<boolean>
 }
 
+// Permission queue for Claude CLI hooks
+const permissionRequests = new Map<string, { resolve: (value: boolean) => void; reject: (error: Error) => void }>()
+
 export async function startControlServer(options: ControlServerOptions) {
   const app = Fastify({ logger: false })
 
   // Health check
   app.get('/health', async () => {
     return { status: 'ok' }
+  })
+
+  // Permission endpoint for Claude CLI hooks
+  app.post<{ Body: { requestId: string; toolName: string; input: any } }>('/permission', async (request, reply) => {
+    const { requestId, toolName, input } = request.body
+
+    console.log(`[Control Server] Permission request ${requestId} for tool: ${toolName}`)
+
+    // For now, auto-approve all permissions
+    // TODO: Send to frontend for user approval
+    return { allowed: true }
   })
 
   // Spawn session
@@ -30,11 +44,16 @@ export async function startControlServer(options: ControlServerOptions) {
     return { success }
   })
 
-  // Listen on random port
-  await app.listen({ port: 0, host: '127.0.0.1' })
-
-  const address = app.server.address()
-  const port = typeof address === 'object' && address !== null ? address.port : 0
+  // Try to listen on port 3002 first (for hook compatibility), fallback to random port
+  let port = 3002
+  try {
+    await app.listen({ port, host: '127.0.0.1' })
+  } catch (error) {
+    // Port 3002 busy, use random port
+    await app.listen({ port: 0, host: '127.0.0.1' })
+    const address = app.server.address()
+    port = typeof address === 'object' && address !== null ? address.port : 0
+  }
 
   return { port, server: app.server }
 }
